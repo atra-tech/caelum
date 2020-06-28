@@ -1,0 +1,445 @@
+#include <SDL2/SDL.h>
+#include <GL/glew.h>
+#include <cglm/cglm.h>
+
+/* Atra Headers */
+#include "util/htable.h"
+#include "util/log.h"
+#include "util/stack.h"
+#include "util/timer.h"
+#include "render.h"
+#include "engine.h"
+#include "entity.h"
+#include "state.h"
+#include "input.h"
+#include "gui.h"
+
+static const float cubeverts[] =
+{
+    0.0f, 0.0f, 1.0f,
+    1.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 1.0f,
+    0.0f, 1.0f, 1.0f,
+
+    1.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f,
+    1.0f, 1.0f, 0.0f,
+
+    0.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 1.0f, 1.0f,
+    0.0f, 1.0f, 0.0f,
+
+    1.0f, 0.0f, 1.0f,
+    1.0f, 0.0f, 0.0f,
+    1.0f, 1.0f, 0.0f,
+    1.0f, 1.0f, 1.0f,
+
+    0.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f,
+
+    0.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f
+};
+
+static const float cubenorms[] =
+{
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f,-1.0f,
+   -1.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f,
+    0.0f,-1.0f, 0.0f
+};
+
+static Window win;
+static Context con;
+static State *state;
+static Shader shad;
+static VBuffer buf;
+static Camera cam;
+static Texture cubetex;
+static Event e;
+static int shouldquit = 0;
+
+static Entity player;
+static vec3 playervel;
+
+//static Uint32 lasttime;
+//static Uint32 currenttime;
+static float dt;
+
+void
+handle()
+{
+    if (mouseislocked())
+    {
+        float x, y;
+
+        mousegetmoverelative(&x, &y);
+        player.ry += x;
+        player.rx += y;
+
+        if (player.rx > MOUSE_BOUND_MAX) player.rx = MOUSE_BOUND_MAX;
+        else if (player.rx < MOUSE_BOUND_MIN) player.rx = MOUSE_BOUND_MIN;
+
+        if (player.ry > 2 * 3.1415f) player.ry = 0.00011;
+        else if (player.ry < 0.0001f) player.ry = 2 * 3.1415;
+    }
+}
+
+void
+update()
+{
+    vec3 dt_vec = {dt, dt, dt};
+    vec3 speed = {1.0f, 1.0f, 1.0f};
+    vec3 speed_tmp;
+    static float toggledelay = 0.0f;
+
+    /* Movement */
+    if (keystate(KEYCODE(w))) {
+        glm_vec3_mul(speed, dt_vec, speed_tmp);
+        glm_vec3_mul(speed_tmp, cam.dirvec, speed_tmp);
+        glm_vec3_add(playervel, speed_tmp, playervel);
+    } 
+    if (keystate(KEYCODE(s))) {
+        glm_vec3_mul(speed, dt_vec, speed_tmp);
+        glm_vec3_mul(speed_tmp, cam.dirvec, speed_tmp);
+        glm_vec3_sub(playervel, speed_tmp, playervel);
+    } 
+    if (keystate(KEYCODE(d))) {
+        glm_vec3_mul(speed, dt_vec, speed_tmp);
+        glm_vec3_mul(speed_tmp, cam.rightvec, speed_tmp);
+        glm_vec3_add(playervel, speed_tmp, playervel);
+    }
+    if (keystate(KEYCODE(a))) {
+        glm_vec3_mul(speed, dt_vec, speed_tmp);
+        glm_vec3_mul(speed_tmp, cam.rightvec, speed_tmp);
+        glm_vec3_sub(playervel, speed_tmp, playervel);
+    }
+    /* Dynamic FOV manipulation */
+    if (keystate(KEYCODE(l))) {
+        camerasetfov(&cam, cam.fov - 0.01f);
+    }
+    if (keystate(KEYCODE(o))) {
+        camerasetfov(&cam, cam.fov + 0.01f);
+    }
+    /* Mouse locking and unlocking */
+    if (keystate(KEYCODE(ESCAPE))) {
+        if (mouseislocked() && toggledelay <= 0) {
+            mouseunlock();
+            //mouseislocked = 0;
+            toggledelay = 2.0f;
+        } else if (toggledelay <= 0) {
+            mouselock();
+            //mouseislocked = 1;
+            toggledelay = 2.0f;
+        }
+    }
+    if (toggledelay > 0) {
+        toggledelay -= 0.1f;
+    }
+
+    player.x += playervel[0];
+    player.y += playervel[1];
+    player.z += playervel[2];
+    glm_vec3_divs(playervel, 1.2f, playervel);
+
+    cameraupdate(&cam);
+}
+
+void
+render()
+{
+    mat4 modelmat = {{1,0,0,0},
+                     {0,1,0,0},
+                     {0,0,1,0},
+                     {0,0,0,1}};
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    
+    //cameraupdate(&cam);
+    texbind(&cubetex);
+    shaderbind(&shad);
+ 
+    shaderloadprojviewmat(&shad, cam.projviewmat);
+    shaderloadviewmat(&shad, cam.viewmat);
+    //shaderloadmodelmat(&shad, modelmat);
+
+    glBindVertexArray(buf.vao);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+
+    for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 10; j++) {
+    for (int k = 0; k < 10; k++) {
+        shaderloadmodelmat(&shad, modelmat);
+        glm_translate_x(modelmat, 3);
+        glDrawElements(GL_TRIANGLES, buf.indxcount, GL_UNSIGNED_INT, NULL);
+    }
+        glm_translate_x(modelmat, -3 * 10);
+        glm_translate_z(modelmat, 3);
+    }
+        glm_translate_z(modelmat, -3 * 10);
+        glm_translate_y(modelmat, 3);
+    }
+    shaderunbind();
+}
+
+void
+makeplayer(Entity *ent)
+{
+    ent->x = 0.0f;
+    ent->y = 0.0f;
+    ent->z = -3.0f;
+    ent->rx = 6.28f;
+    ent->ry = 0.0f;
+    ent->rz = 0.0f;
+}
+
+void
+buttonmouseover(GUIElement *elem, ...)
+{
+    guisetbacktexture(elem, 0, 200, 128, 32);
+    elem->layer->dirty = 1;
+}
+
+void
+buttonmouseleave(GUIElement *elem, ...)
+{
+    guisetbacktexture(elem, 0, 168, 128, 32);
+    elem->layer->dirty = 1;
+}
+
+void
+buttonmousedown(GUIElement *elem, ...)
+{
+    guisetbacktexture(elem, 0, 232, 128, 32);
+    elem->layer->dirty = 1;
+}
+
+void
+buttonmouseup(GUIElement *elem, ...)
+{
+    if (elem->state & GUI_STATE_MOUSEOVER) {
+        guisetbacktexture(elem, 0, 200, 128, 32);
+    } else {
+        guisetbacktexture(elem, 0, 168, 128, 32);
+    }
+    elem->layer->dirty = 1;
+}
+
+void
+maketestgui(void)
+{
+    GUILayer *layer;
+    GUIElement *elem[10];
+
+    layer = guilayercreate("res/shader/guivert.glsl",
+            "res/shader/guifrag.glsl",
+            "res/texture/gui.png");
+
+    elem[0] = guielemcreate(0.2f, 0.2f, 0.4f, 0.4f,
+            GUI_CUSTOM, 
+            GUI_ATTR_MOVABLE |
+            GUI_ATTR_HASTEXTURE |
+            GUI_ATTR_HASBORDER,
+            "main_frame");
+
+    elem[1] = guielemcreate(0.525f, 0.05f, 0.425f, 0.9f,
+            GUI_CUSTOM,
+            GUI_ATTR_HASTEXTURE |
+            GUI_ATTR_HASBORDER |
+            GUI_ATTR_HASTEXT |
+            GUI_ATTR_SCROLLABLE |
+            GUI_ATTR_SCROLLBAR |
+            GUI_ATTR_TEXTINPUT |
+            GUI_ATTR_MULTILINE |
+            GUI_ATTR_WRAPTEXT,
+            "inner_right");
+
+    guilinklayer(elem[0], layer);
+    guienabletextlayer(layer, "res/shader/fontvert.glsl",
+            "res/shader/fontfrag.glsl",
+            "res/font/maledict.png",
+            8, 8);
+    guitextscrollenable(elem[1]);
+    
+    guitextgridadd(guitextgridcreate(8, 8, 0, 2), elem[1]);
+    //guisetgridtext(elem[2]->textgrid, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18");
+
+    guisetbordersize(elem[0], 16);
+    guisetbordersize(elem[1], 8);
+    guisetbordersize(elem[2], 8);
+
+    guiaddelem(elem[0], elem[1]);
+    guiaddelem(elem[0], elem[2]);
+    guiaddelem(elem[1], elem[3]);
+    guiaddelem(elem[1], elem[4]);
+    guiaddelem(elem[1], elem[5]);
+
+    guisetbacktexture(elem[0], 0, 8, 128, 128);
+    guisetcornertexture(elem[0], 8, 0, 8, 8);
+    guisetedgetexture(elem[0], 0, 0, 8, 8);
+
+    guisetbacktexture(elem[1], 128, 8, 128, 128);
+    guisetcornertexture(elem[1], 20, 0, 4, 4);
+    guisetedgetexture(elem[1], 16, 0, 4, 4);
+
+    GUIScrollBar *bar = guiscrollbarcreate(16, 8, 0, 0);
+    guiscrollbaradd(bar, elem[1]);
+    guisetscrollbarbacktex(elem[1], 0, 296, 8, 64);
+    guisetscrollbarbartex(elem[1], 8, 296, 8, 64);
+
+    guisetcursortexture(elem[1], 0, 0, 8, 8);
+}
+
+void
+makefpscounter()
+{
+    GUILayer *layer;
+    GUIElement *elem;
+    
+    layer = guilayercreate("res/shader/guivert.glsl",
+            "res/shader/guifrag.glsl",
+            "res/texture/gui.png");
+
+    elem = guielemcreate(0.0f, 0.9f, 0.5f, 0.1f,
+            GUI_CUSTOM, 
+            GUI_ATTR_HASTEXT,
+            "fps_frame");
+
+    guilinklayer(elem, layer);
+    guienabletextlayer(layer, "res/shader/fontvert.glsl",
+            "res/shader/fontfrag.glsl",
+            "res/font/maledict.png",
+            8, 8);
+ 
+    guitextgridadd(guitextgridcreate(16, 16, 0, 8), elem);
+    guisetgridtext(elem, "FPS: <NO DATA>");
+}
+
+int
+main(int argc, char *argv[])
+{
+    int redraw = 0;
+
+    makeplayer(&player);
+    state = statecreate(handle, update, render);
+    atrainit("Atra Engine", 1280, 720, &win, &con);
+    atrapushstate(state);
+    shaderinit(&shad, "res/shader/testvertshader.glsl",
+                      "res/shader/testfragshader.glsl");
+    vbufinit(&buf);
+    texinit();
+    fontinit();
+
+    camerainit(&cam, 1280, 720, CAMERA_PROJECTION);
+    camerabindtoentity(&cam, &player);
+
+    /* GUI Setup */
+    guiinit(&cam);
+    maketestgui();
+    makefpscounter();
+
+    keyinit();
+    mouselock();
+    mouseinitrelative();
+   
+    texfind(&cubetex, "res/texture/grassbox.png");
+    cubetex.imagesize = 128;
+    cubetex.texsize = 32;
+
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glDepthFunc(GL_LESS);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    rendercube();
+
+    timerglobalstart();
+
+    int frames = 0;
+    GUIElement *fps_elem = guigetelem("fps_frame");
+    char fps_str[32] = {0};
+    float time = 0;
+
+
+    while (!shouldquit) {
+        timerglobalupdate();
+        dt = timerglobaldiff() * 0.001f;
+
+        if (guigetkbdfocus()) {
+            SDL_StartTextInput();
+        }
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                shouldquit = 1;
+                break;
+            }
+
+            if (!redraw) {
+                redraw = windoweventhandle(&win, &e, &cam);
+            }
+            else {
+                windoweventhandle(&win, &e, &cam);
+            }
+
+            if (mouseislocked()) {
+                atrastatehandle();
+            }
+            else {
+                guihandle(&e);
+            }
+
+            if (redraw) {
+                guiredraw();
+                redraw = 0;
+            }
+        }
+        if (!guigetkbdfocus()) {
+            SDL_StopTextInput();
+            atrastateupdate();
+        }
+        guiupdate(dt);
+        atrastaterender();
+        guirender();
+
+        SDL_GL_SwapWindow(win.wndw);
+
+        /* Update fps counter */
+        time += dt;
+        frames++;
+
+        if (time >= 0.5) {
+            snprintf(fps_str, 32, "FPS: %.1lf", frames / time);
+            guisetgridtext(fps_elem, fps_str);
+            fps_elem->layer->dirty = 1;
+            time = 0;
+            frames = 0;
+        }
+    }
+    
+    guishutdown();
+
+    vbufdelete(&buf);
+    texquit();
+    fontquit();
+    statedelete(state);
+    shaderdelete(&shad);
+    contextdelete(&con);
+    windowdelete(&win);
+    atrashutdown();
+    state = NULL;
+
+    logstop();
+
+    return 0;
+}
