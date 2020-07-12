@@ -21,10 +21,6 @@ static GLuint shadercompile(const char *path, GLenum type);
 static GLuint shaderlink(GLuint vertshaderid, GLuint fragshaderid);
 static void shadergetuniforms(Shader *shader);
 
-//static List *texturefiles;
-//static List *texturedata;
-//static List *fontfiles;
-//static List *fontdata;
 static HTable *textures;
 static HTable *fonts;
 
@@ -75,7 +71,7 @@ vbufaddindex(VBuffer *buf, ivec3 index)
 void
 vbufbindvbo(VBuffer *buf, int dimens, List *data)
 {
-    int i, j;
+    uint i, j;
     GLuint *vbo = malloc(sizeof(GLuint));
     float *vec = malloc(data->size * dimens * sizeof(float));
 
@@ -125,7 +121,7 @@ vbufbindvbo(VBuffer *buf, int dimens, List *data)
 void
 vbufbindebo(VBuffer *buf)
 {
-    int i, j;
+    uint i, j;
     GLuint *ebo = malloc(sizeof(GLuint));
     int *vec = malloc(buf->indxs->size * 3 * sizeof(int));
 
@@ -188,7 +184,7 @@ vbufclear(VBuffer *buf)
 void
 vbufreset(VBuffer *buf)
 {
-    int i;
+    uint i;
     glDeleteVertexArrays(1, &buf->vao);
     
     for (i = 0; i < buf->buffers->size; i++) {
@@ -214,7 +210,7 @@ vbufreset(VBuffer *buf)
 void
 vbufdelete(VBuffer *buf)
 {
-    int i;
+    uint i;
     glDeleteVertexArrays(1, &buf->vao);
 
     for (i = 0; i < buf->buffers->size; i++) {
@@ -235,6 +231,52 @@ vbufdelete(VBuffer *buf)
     buf->vao = 0;
     buf->vbocount = 0;
     buf->indxcount = 0;
+}
+
+void
+fbufinit(FBuffer *buffer, uint width, uint height, uint comp, uint attach)
+{
+    float bordercolor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+
+    buffer->width = width;
+    buffer->height = height;
+
+    glGenFramebuffers(1, &buffer->fbo);
+    glGenTextures(1, &buffer->map);
+    glBindTexture(GL_TEXTURE_2D, buffer->map);
+    glTexImage2D(GL_TEXTURE_2D, 0, comp, width, height,
+            0, comp, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, bordercolor);
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, buffer->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, attach,
+            GL_TEXTURE_2D, buffer->map, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void
+fbufbind(FBuffer *buffer)
+{
+    glBindFramebuffer(GL_FRAMEBUFFER, buffer->fbo);
+}
+/*
+void
+fbufreset(FBuffer *buffer)
+{
+
+}*/
+
+void
+fbufdelete(FBuffer *buffer)
+{
+    glDeleteTextures(1, &buffer->map);
+    glDeleteFramebuffers(1, &buffer->fbo);
 }
 
 void
@@ -276,9 +318,9 @@ shadercompile(const char *path, GLenum type)
     glGetShaderiv(shaderid, GL_INFO_LOG_LENGTH, &loglength);
 
     if (loglength > 0) {
-        char *info = calloc(loglength, sizeof(char));
+        char *info = calloc(loglength + 1, sizeof(char));
         glGetProgramInfoLog(shaderid, loglength, NULL, info);
-        logprint(LOG_ERROR, "shader: Unable to compile shader: $s", info);
+        logprint(LOG_FATAL, "shader: Unable to compile shader: $s", info);
         free(info);
     }
     free(code);
@@ -382,6 +424,48 @@ shaderloadviewmat(Shader *shader, mat4 matrix)
 }
 
 void
+shaderaddint(Shader *shader, const char *name, int data)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadint(loc, data);
+}
+
+void
+shaderaddfloat(Shader *shader, const char *name, float data)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadfloat(loc, data);
+}
+
+void
+shaderaddvec2(Shader *shader, const char *name, vec2 vec)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadvec2(loc, vec);
+}
+
+void
+shaderaddvec3(Shader *shader, const char *name, vec3 vec)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadvec3(loc, vec);
+}
+
+void
+shaderaddvec4(Shader *shader, const char *name, vec4 vec)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadvec4(loc, vec);
+}
+
+void
+shaderaddmat4(Shader *shader, const char *name, mat4 mat)
+{
+    uint loc = glGetUniformLocation(shader->prog, name);
+    shaderloadmat4(loc, mat);
+}
+
+void
 shadergetuniforms(Shader *shader)
 {
     shaderbind(shader);
@@ -394,8 +478,6 @@ shadergetuniforms(Shader *shader)
 void
 texinit(void)
 {
-    //texturefiles = listcreate();
-    //texturedata = listcreate();
     textures = htablecreate(htablestringhash, htablestringequal);
 }
 
@@ -535,17 +617,11 @@ void
 texquit(void)
 {
     htabledelete(textures);
-    //listdealloc(texturefiles);
-    //listdealloc(texturedata);
-    //listdelete(texturefiles);
-    //listdelete(texturedata);
 }
 
 void
 fontinit(void)
 {
-    //fontfiles = listcreate();
-    //fontdata = listcreate();
     fonts = htablecreate(htablestringhash, htablestringequal);
 }
 
@@ -584,17 +660,12 @@ fontload(FontTex *font, const char *path, int width, int height)
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    /*glTexParameteri(GL_TEXTURE_2D,
-                    GL_TEXTURE_MIN_FILTER,
-                    GL_NEAREST_MIPMAP_LINEAR);*/
     glTexParameteri(GL_TEXTURE_2D,
                     GL_TEXTURE_MIN_FILTER,
                     GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,
                     GL_TEXTURE_MAG_FILTER,
                     GL_NEAREST);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
-    //glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     font->width = surface->w;

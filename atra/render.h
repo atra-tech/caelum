@@ -49,6 +49,12 @@ typedef struct {
 } Texture;
 
 typedef struct {
+    uint fbo;
+    uint map;
+    uint width, height;
+} FBuffer;
+
+typedef struct {
     uint id;
     uint width;
     uint height;
@@ -73,6 +79,11 @@ void vbufclear(VBuffer *);
 void vbufreset(VBuffer *);
 void vbufdelete(VBuffer *);
 
+void fbufinit(FBuffer *, uint width, uint height, uint comp, uint attach);
+void fbufbind(FBuffer *);
+//void fbufreset(FBuffer *);
+void fbufdelete(FBuffer *);
+
 void shaderinit(Shader *shader, const char *vertsrc, const char *fragsrc);
 uint shaderload(const char *vertpath, const char *fragpath);
 void shaderbind(Shader *shader);
@@ -86,6 +97,12 @@ void shaderloadmat4(uint loc, mat4 mat);
 void shaderloadprojviewmat(Shader *shader, mat4 matrix);
 void shaderloadmodelmat(Shader *shader, mat4 matrix);
 void shaderloadviewmat(Shader *shader, mat4 matrix);
+void shaderaddint(Shader *shader, const char *name, int data);
+void shaderaddfloat(Shader *shader, const char *name, float data);
+void shaderaddvec2(Shader *shader, const char *name, vec2 vec);
+void shaderaddvec3(Shader *shader, const char *name, vec3 vec);
+void shaderaddvec4(Shader *shader, const char *name, vec4 vec);
+void shaderaddmat4(Shader *shader, const char *name, mat4 mat);
 void shaderdelete(Shader *shader);
 
 void texinit(void);

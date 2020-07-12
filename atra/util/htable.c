@@ -22,7 +22,6 @@
 static void htablegrow(HTable *table);
 static void htableshrink(HTable *table);
 static int htablenullcheck(HTable *table, const char *msg);
-static uint htableget16bits(const void *ptr);
 
 HTable *
 htablecreate(uint (*hash)(const void *),
@@ -74,7 +73,7 @@ htablegrow(HTable *table)
     free(keys);
     free(vals);
 }
-
+/*
 void
 htableshrink(HTable *table)
 {
@@ -102,7 +101,7 @@ htableshrink(HTable *table)
     }
     free(keys);
     free(vals);
-}
+}*/
 
 /* Sets all key and value references to NULL. 
  * NOTE: Does not deallocate memory used by elements. */
@@ -170,7 +169,7 @@ htableadd(HTable *table, void *key, void *val)
 
 /* Retrieves value associated with the key. */
 void *
-htableget(HTable *table, void *key)
+htableget(HTable *table, const void *key)
 {
     uint i;
     uint size = table->size;
@@ -186,12 +185,13 @@ htableget(HTable *table, void *key)
         if (table->equal(key, keys[i]))
             return vals[i];
     }
+
     return NULL;
 }
 
 /* Removes the specified element from the table. */ 
 void
-htableremove(HTable *table, void *key)
+htableremove(HTable *table, const void *key)
 {
     uint i;
     uint size = table->size;
@@ -215,7 +215,7 @@ htableremove(HTable *table, void *key)
 
 /* Deallocate specific element and remove from table */
 void
-htabledeallocelem(HTable *table, void *key)
+htabledeallocelem(HTable *table, const void *key)
 {
     uint i;
     uint size = table->size;
@@ -281,12 +281,6 @@ htablenullcheck(HTable *table, const char *msg)
         return 1;
     }
     return 0;
-}
-
-uint
-htableget16bits(const void *ptr)
-{
-    return *(const ushort*)ptr;
 }
 
 uint

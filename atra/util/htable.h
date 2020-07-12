@@ -29,9 +29,9 @@ HTable *htablecreate(uint (*hash)(const void *),
 void htableclear(HTable *);
 int htableempty(HTable *);
 int htableadd(HTable *, void *key, void *val);
-void *htableget(HTable *, void *key);
-void htableremove(HTable *, void *key);
-void htabledeallocelem(HTable *, void *key);
+void *htableget(HTable *, const void *key);
+void htableremove(HTable *, const void *key);
+void htabledeallocelem(HTable *, const void *key);
 void htabledealloc(HTable *);
 void htabledelete(HTable *);
 

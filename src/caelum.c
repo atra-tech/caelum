@@ -10,7 +10,7 @@
 #include "util/log.h"
 #include "util/timer.h"
 #include "core.h"
-#include "mainmenu.h"
+//#include "mainmenu.h"
 #include "mainstate.h"
 
 int
@@ -34,7 +34,7 @@ main(int argc, char **argv)
         atrastateupdate(dt);
         atrastaterender();
 
-        SDL_GL_SwapWindow((SDL_Window *)window);
+        SDL_GL_SwapWindow(window->wndw);
     }
 
     stopatraengine();
