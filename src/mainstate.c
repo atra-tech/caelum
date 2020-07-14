@@ -25,12 +25,12 @@ static Camera *camera;
 static State *caelumstate;
 static World *world;
 static Agent *player;
+static Agent *playercam;
 //static 
 
 void
 mainstateinit(void)
 {
-
     caelumstate = statecreate(caelumhandle, caelumupdate, caelumrender);
     camera = getmaincamera();
     worldinit();
@@ -38,14 +38,25 @@ mainstateinit(void)
     world = worldcreate();
 
     player = agentcreate();
-    player->ent.x = 4.0f;
-    player->ent.y = 10.0f;
-    player->ent.z = 20.0f;
-    player->ent.rx = 5.06f;//5.23f;
-    player->ent.ry = 1.57f;
+    playercam = agentcreate();
+    
+    player->ent.x = 520.0f;
+    player->ent.y = 0.0f;
+    player->ent.z = 520.0f;
+    player->ent.rx = 0.00f;
+    player->ent.ry = 0.00f;
     player->ent.rz = 0.00f;
+
+    playercam->ent.x = 2.0f;
+    playercam->ent.y = 16.0f;
+    playercam->ent.z = 8.0f;
+    playercam->ent.rx = 5.06f;
+    playercam->ent.ry = 1.57f;
+    playercam->ent.rz = 0.00f;
+
     agentsetplayer(player);
-    camerabindtoentity(camera, &player->ent);
+    agentsetplayercam(playercam);
+    camerabindtoentity(camera, &playercam->ent);
     createtestworld();
 }
 
@@ -59,11 +70,13 @@ createtestworld(void)
 
     y = 0;
 
-    for (x = 0; x < SEGMENT_SIZE; x++)
+    for (x = 512; x < 512 + SEGMENT_SIZE; x++)
     {
-        for (z = 0; z < SEGMENT_SIZE; z++)
+        for (z = 512; z < 512 + SEGMENT_SIZE; z++)
         {
-            if (x == 0 || z == 0 || x == SEGMENT_SIZE - 1 || z == SEGMENT_SIZE - 1) {
+            if (x == 512 || z == 512 ||
+                    x == 512 + SEGMENT_SIZE - 1 ||
+                    z == 512 + SEGMENT_SIZE - 1) {
                 tile = worldgettoptileat(world, x, y, z);
                 tile->data = tilegetdata("res/tile/int_wall.abf");
             } else {
@@ -73,23 +86,23 @@ createtestworld(void)
         }
     }
     TileData *wall = tilegetdata("res/tile/int_wall_lamp.abf");
-    worldgettoptileat(world, 10, 0, 6)->data = wall;
-    worldgettoptileat(world, 10, 0, 7)->data = wall;
-    worldgettoptileat(world, 10, 0, 8)->data = wall;
-    worldgettoptileat(world, 10, 0, 9)->data = wall;
-    worldgettoptileat(world, 4, 0, 4)->data = wall;
-    worldgettoptileat(world, 5, 0, 4)->data = wall;
-    worldgettoptileat(world, 6, 0, 4)->data = wall;
-    worldgettoptileat(world, 7, 0, 4)->data = wall;
-    worldgettoptileat(world, 8, 0, 4)->data = wall;
-    worldgettoptileat(world, 12, 0, 15)->data =
+    worldgettoptileat(world, 522, 0, 518)->data = wall;
+    worldgettoptileat(world, 522, 0, 519)->data = wall;
+    worldgettoptileat(world, 522, 0, 520)->data = wall;
+    worldgettoptileat(world, 522, 0, 521)->data = wall;
+    worldgettoptileat(world, 516, 0, 516)->data = wall;
+    worldgettoptileat(world, 517, 0, 516)->data = wall;
+    worldgettoptileat(world, 518, 0, 516)->data = wall;
+    worldgettoptileat(world, 519, 0, 516)->data = wall;
+    worldgettoptileat(world, 520, 0, 516)->data = wall;
+    worldgettoptileat(world, 524, 0, 527)->data =
         tilegetdata("res/tile/int_floor_tiled.abf");
 
-    light = lightcreate(3.0, 0.5, 4.0, 10);
+    light = lightcreate(515.0, 0.5, 516.0, 10);
     lightsetcolor(light, 0.1, 0.5, 1.0);
     lightcalclightmap(light, world);
     lightapplylight(light, world);
-    light = lightcreate(12.0, 0.5, 14.0, 8);
+    light = lightcreate(524.0, 0.5, 526.0, 14);
     //light = lightcreate(3.0, 0.5, 3.0, 10);
     lightsetcolor(light, 1.0, 0.5, 0.1);
     lightcalclightmap(light, world);
@@ -127,6 +140,7 @@ caelumhandle(void)
             exit(EXIT_SUCCESS);
         }
         windoweventhandle(getmainwindow(), &e, camera);
+        playerhandle(&e);
         worldhandle(world, &e);
         // Pass event to player for handling
         // playerhandle(&e);
@@ -138,6 +152,7 @@ caelumupdate(float dt)
 {
     // Update game elements and GUI
     // Update player position based on velocity.
+    playerupdate(world, dt * 0.001);
     cameraupdate(camera);
 }
 
@@ -153,4 +168,5 @@ caelumrender(void)
     
     // Render players, world, entities, etc.
     worldrender(world, camera);
+    playerrender();
 }

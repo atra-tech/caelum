@@ -21,11 +21,11 @@ void main()
     float texalpha = albedodata.a;
 
     vec3 matdiffuse = albedodata.rgb;
-    vec3 matambient = vec3(0.05, 0.05, 0.05) * matdiffuse;
+    //vec3 matambient = vec3(0.00, 0.00, 0.00) * matdiffuse;
     vec3 matemission = emissiondata.rgb;
 
     Color = vec4(
-            matambient + 
+            //matambient + 
             matdiffuse * vertlight * light_pow +
             matemission,
             texalpha);

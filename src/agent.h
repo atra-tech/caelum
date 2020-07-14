@@ -13,6 +13,8 @@
 #include <cglm/cglm.h>
 #include "render.h"
 
+typedef struct World World;
+
 typedef struct Agent {
     Entity ent;
     vec3 vel;
@@ -25,12 +27,18 @@ void agentinit(void);
 Agent *agentcreate(void);
 int agentregister(Agent *agent, const char *id);
 void agentsetplayer(Agent *agent);
+void agentsetplayercam(Agent *agent);
 Agent *agentget(const char *id);
 Agent *agentgetplayer(void);
+Agent *agentgetplayercam(void);
 void agentsetpos(Agent *agent, float x, float y, float z);
 void agentsetrot(Agent *agent, float x, float y, float z);
 void agentderegister(const char *id);
 void agentdelete(Agent *agent);
 void agentshutdown(void);
+
+void playerhandle(Event *e);
+void playerupdate(World *world, float dt);
+void playerrender(void);
 
 #endif /* CAELUM_AGENT_H */

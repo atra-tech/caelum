@@ -16,7 +16,7 @@
 #include "tile.h"
 
 #define WORLD_SIZE      1024
-#define WORLD_HEIGHT    16
+#define WORLD_HEIGHT    1
 #define SEGMENT_SIZE    16
 #define LAYER_TILECOUNT SEGMENT_SIZE * SEGMENT_SIZE
 #define SEGMENT_COUNT   WORLD_SIZE / SEGMENT_SIZE

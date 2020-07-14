@@ -40,7 +40,27 @@ static const float wallverts[] =
     0.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 1.0f,
     1.0f, 1.0f, 0.0f,
-    0.0f, 1.0f, 0.0f
+    0.0f, 1.0f, 0.0f,
+    
+    0.0f, -0.17f, 1.0f,
+    1.0f, -0.17f, 1.0f,
+    1.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+
+    1.0f, -0.17f, 0.0f,
+    0.0f, -0.17f, 0.0f,
+    0.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+
+    0.0f, -0.17f, 0.0f,
+    0.0f, -0.17f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 0.0f,
+
+    1.0f, -0.17f, 1.0f,
+    1.0f, -0.17f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 1.0f,
 };
 
 static const float topfloorverts[] =
@@ -105,7 +125,24 @@ static const float worldnorms[] =
     0.0f, 0.0f,-1.0f,
    -1.0f, 0.0f, 0.0f,
     1.0f, 0.0f, 0.0f,
-    0.0f, 1.0f, 0.0f
+    0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f,-1.0f,
+   -1.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+
+};
+
+enum {
+    WALL_BACK,
+    WALL_FRONT,
+    WALL_LEFT,
+    WALL_RIGHT,
+    WALL_TOP,
+    WALL_SUB_BACK,
+    WALL_SUB_FRONT,
+    WALL_SUB_LEFT,
+    WALL_SUB_RIGHT
 };
 
 enum {
@@ -121,7 +158,11 @@ static void segmentdeletematrix(Segment *segs, uint rows, uint cols);
 static void layerdeletearray(Layer *layers, uint count);
 static void lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
-static void lightwallinterpolate(World *world, uint x, uint y, uint z,
+static void lightwallsideinterpolate(World *world, uint x, uint y, uint z,
+        float *color, uint side, uint corner);
+static void lightwalltopinterpolate(World *world, uint x, uint y, uint z,
+        float *color, uint corner);
+static void lightwallsubinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint side, uint corner);
 
 static List *tiledata;
@@ -158,6 +199,9 @@ worldcreate()
 
     for (seg_x = 0; seg_x < SEGMENT_COUNT; seg_x++) {
         for (seg_y = 0; seg_y < SEGMENT_COUNT; seg_y++) {
+            if (seg_x < 31 || seg_x > 33) continue;
+            if (seg_y < 31 || seg_y > 33) continue;
+
             seg = &world->segs[seg_y + seg_x * SEGMENT_COUNT];
             layer = &seg->layers[0];
             data = tilegetdata("res/tile/maint_floor.abf");
@@ -266,31 +310,80 @@ worldupdate(World *world, float dt)
 void
 toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
 {
-    uint i, j, k, vertidx, uvidx, normidx, indexcount;
+    uint i, j, vertidx, uvidx, normidx, indexcount, world_x, world_z;
     Tile *tile = &seg->layers->toptiles[z + x * SEGMENT_SIZE];
     VBuffer *vbo = &seg->vbo;
     vec3 vert;
     vec2 uv;
     vec3 norm;
     ivec3 index;
+    float *colorvec;
     LightColor *color;
+    Tile *tile_adj[4] = {NULL, NULL, NULL, NULL};
+
+    world_x = seg->x * SEGMENT_SIZE + x;
+    world_z = seg->x * SEGMENT_SIZE + z;
+
+    if (world_z < WORLD_SIZE - 1) { 
+        tile_adj[0] = worldgettoptileat(world, world_x, y, world_z + 1);
+    }
+    if (world_z > 0) {
+        tile_adj[1] = worldgettoptileat(world, world_x, y, world_z - 1);
+    }
+    if (world_x > 0) { 
+        tile_adj[2] = worldgettoptileat(world, world_x - 1, y, world_z);
+    }
+    if (world_x < WORLD_SIZE - 1) {
+        tile_adj[3] = worldgettoptileat(world, world_x + 1, y, world_z);
+    }
 
     indexcount = vbo->indxcount / 3;
     color = &seg->layers[y].light[z + x * SEGMENT_SIZE];
 
     if (tile->data->attr & TILE_WALL) {
-
-        //TODO: Implement special rules for walls
-        for (k = 0; k < 20; k++) {
-            float *colorvec = malloc(3 * sizeof(float));
-            colorvec[0] = color->r;
-            colorvec[1] = color->g;
-            colorvec[2] = color->b;
-            listpushback(seg->vertlights, colorvec);
-        }
-
-        for (i = 0; i < 5; i++) {
+        for (i = 0; i < 9; i++) {
             normidx = i * 3;
+
+            /* Cull faces */
+            switch (i) {
+            case WALL_BACK:
+                if (tile_adj[0] && tile_adj[0]->data)
+                    if (tile_adj[0]->data->attr & TILE_WALL)
+                        continue;
+                break;
+            case WALL_FRONT:
+                if (tile_adj[1] && tile_adj[1]->data)
+                    if (tile_adj[1]->data->attr & TILE_WALL)
+                        continue;
+                break;
+            case WALL_LEFT:
+                if (tile_adj[2] && tile_adj[2]->data)
+                    if (tile_adj[2]->data->attr & TILE_WALL)
+                        continue;
+                break;
+            case WALL_RIGHT:
+                if (tile_adj[3] && tile_adj[3]->data)
+                    if (tile_adj[3]->data->attr & TILE_WALL)
+                        continue;
+            }
+            
+            switch (i - 5) {
+            case WALL_BACK:
+                if (tile_adj[0] && tile_adj[0]->data)
+                    continue;
+                break;
+            case WALL_FRONT:
+                if (tile_adj[1] && tile_adj[1]->data)
+                    continue;
+                break;
+            case WALL_LEFT:
+                if (tile_adj[2] && tile_adj[2]->data)
+                    continue;
+                break;
+            case WALL_RIGHT:
+                if (tile_adj[3] && tile_adj[3]->data)
+                    continue;
+            }
 
             for (j = 0; j < 4; j++) {
                 vertidx = i * 12 + j * 3;
@@ -299,12 +392,35 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
                 vert[1] = wallverts[vertidx + 1] + y;
                 vert[2] = wallverts[vertidx + 2] + z;
 
+                colorvec = malloc(3 * sizeof(float));
+                /*colorvec[0] = color->r;
+                colorvec[1] = color->g;
+                colorvec[2] = color->b;*/
+                colorvec[0] = 0.0f;
+                colorvec[1] = 0.0f;
+                colorvec[2] = 0.0f;
+
+                if (i < 4) {
+                    lightwallsideinterpolate(world, world_x, y, world_z,
+                            colorvec, i, j);
+                } else if (i < 5) {
+                    lightwalltopinterpolate(world, world_x, y, world_z,
+                            colorvec, j);
+                } else {
+                    lightwallsubinterpolate(world, world_x, y, world_z,
+                            colorvec, i, j);
+                }
+                listpushback(seg->vertlights, colorvec);
+
                 if (i < 4) {
                     uv[0] = tile->data->sidetex[uvidx + 0];
                     uv[1] = tile->data->sidetex[uvidx + 1];
-                } else {
+                } else if (i < 5) {
                     uv[0] = tile->data->toptex[uvidx + 0];
                     uv[1] = tile->data->toptex[uvidx + 1];
+                } else {
+                    uv[0] = tile->data->subsidetex[uvidx + 0];
+                    uv[1] = tile->data->subsidetex[uvidx + 1];
                 }
                 norm[0] = worldnorms[normidx + 0];
                 norm[1] = worldnorms[normidx + 1];
@@ -326,19 +442,39 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
             vbo->indxcount += 12;
         }
     } else {
-        for (k = 0; k < 20; k++) {
-            float *colorvec = malloc(3 * sizeof(float));
-            uint corner = k % 4;
-            colorvec[0] = color->r;
-            colorvec[1] = color->g;
-            colorvec[2] = color->b;
-            lightinterpolate(world, seg->x * SEGMENT_SIZE + x, y,
-                    seg->z * SEGMENT_SIZE + z, colorvec, corner);
-            listpushback(seg->vertlights, colorvec);
-        }
         for (i = 0; i < 5; i++) {
             normidx = i * 3;
 
+            switch (i) {
+            case WALL_BACK:
+                if (tile_adj[0] && tile_adj[0]->data) {
+                    if (tile_adj[0]->data->attr & TILE_WALL) {
+                        continue;
+                    }
+                }
+                break;
+            case WALL_FRONT:
+                if (tile_adj[1] && tile_adj[1]->data) {
+                    if (tile_adj[1]->data->attr & TILE_WALL) {
+                        continue;
+                    }
+                }
+                break;
+            case WALL_LEFT:
+                if (tile_adj[2] && tile_adj[2]->data) {
+                    if (tile_adj[2]->data->attr & TILE_WALL) {
+                        continue;
+                    }
+                }
+                break;
+            case WALL_RIGHT:
+                if (tile_adj[3] && tile_adj[3]->data) {
+                    if (tile_adj[3]->data->attr & TILE_WALL) {
+                        continue;
+                    }
+                }
+            }
+            
             for (j = 0; j < 4; j++) {
                 vertidx = i * 12 + j * 3;
                 uvidx = j * 2;
@@ -347,9 +483,22 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
                 vert[2] = topfloorverts[vertidx + 2] + z;
 
                 if (i < 4) {
+                    colorvec = malloc(3 * sizeof(float));
+                    colorvec[0] = color->r * 0.5;
+                    colorvec[1] = color->g * 0.5;
+                    colorvec[2] = color->b * 0.5;
+                    listpushback(seg->vertlights, colorvec);
+
                     uv[0] = tile->data->sidetex[uvidx + 0];
                     uv[1] = tile->data->sidetex[uvidx + 1];
                 } else {
+                    colorvec = malloc(3 * sizeof(float));
+                    colorvec[0] = color->r;
+                    colorvec[1] = color->g;
+                    colorvec[2] = color->b;
+                    lightinterpolate(world, world_x, y, world_z, colorvec, j);
+                    listpushback(seg->vertlights, colorvec);
+
                     uv[0] = tile->data->toptex[uvidx + 0];
                     uv[1] = tile->data->toptex[uvidx + 1];
                 }
@@ -378,20 +527,21 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
 void
 subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
 {
-    uint i, j, k, vertidx, uvidx, normidx, indexcount;
+    uint i, j, vertidx, uvidx, normidx, indexcount;
     Tile *tile = &seg->layers[y].subtiles[z + x * SEGMENT_SIZE];
     VBuffer *vbo = &seg->vbo;
     vec3 vert;
     vec2 uv;
     vec3 norm;
     ivec3 index;
+    float *colorvec;
     LightColor *color;
 
     indexcount = vbo->indxcount / 3;
     y -= 0.1f;
     color = &seg->layers[y].light[z + x * SEGMENT_SIZE];
 
-    for (k = 0; k < 20; k++) {
+/*    for (k = 0; k < 20; k++) {
         float *colorvec = malloc(3 * sizeof(float));
         uint corner = k % 4;
         colorvec[0] = color->r;
@@ -400,7 +550,7 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
         lightinterpolate(world, seg->x * SEGMENT_SIZE + x, y,
                 seg->z * SEGMENT_SIZE + z, colorvec, corner);
         listpushback(seg->vertlights, colorvec);
-    }
+    }*/
     for (i = 0; i < 5; i++) {
         normidx = i * 3;
 
@@ -412,9 +562,23 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
             vert[2] = subfloorverts[vertidx + 2] + z;
 
             if (i < 4) {
+                colorvec = malloc(3 * sizeof(float));
+                colorvec[0] = color->r * 0.5;
+                colorvec[1] = color->g * 0.5;
+                colorvec[2] = color->b * 0.5;
+                listpushback(seg->vertlights, colorvec);
+
                 uv[0] = tile->data->sidetex[uvidx + 0];
                 uv[1] = tile->data->sidetex[uvidx + 1];
             } else {
+                colorvec = malloc(3 * sizeof(float));
+                colorvec[0] = color->r;
+                colorvec[1] = color->g;
+                colorvec[2] = color->b;
+                lightinterpolate(world, seg->x * SEGMENT_SIZE + x, y,
+                        seg->z * SEGMENT_SIZE + z, colorvec, j);
+                listpushback(seg->vertlights, colorvec);
+
                 uv[0] = tile->data->toptex[uvidx + 0];
                 uv[1] = tile->data->toptex[uvidx + 1];
             }
@@ -510,13 +674,17 @@ worldrender(World *world, Camera *cam)
 
     for (i = -1; i <= 1; i++) {
         seg_x = pseg_x + i;
-        if (seg_x < 0) continue;
+        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
+            continue;
+        }
 
         for (j = -1; j <= 1; j++) {
             seg_z = pseg_z + j;
             seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
             
-            if (seg_z < 0) continue;
+            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
+                continue;
+            }
 
             if (remesh) {
                 segmentmesh(world, seg);
@@ -539,14 +707,14 @@ lightinterpolate(World *world, uint x, uint y, uint z,
 
     if (x < 1) {
         x = 1;
-    } else if (x >= WORLD_SIZE) {
-        x = WORLD_SIZE - 1;
+    } else if (x >= WORLD_SIZE - 1) {
+        x = WORLD_SIZE - 2;
     }
 
     if (z < 1) {
         z = 1;
-    } else if (z >= WORLD_SIZE) {
-        z = WORLD_SIZE - 1;
+    } else if (z >= WORLD_SIZE - 1) {
+        z = WORLD_SIZE - 2;
     }
 
     switch (corner) {
@@ -583,26 +751,245 @@ lightinterpolate(World *world, uint x, uint y, uint z,
 }
 
 void
-lightwallinterpolate(World *world, uint x, uint y, uint z,
-        float *color, uint size, uint corner)
+lightwallsideinterpolate(World *world, uint x, uint y, uint z,
+        float *color, uint side, uint corner)
 {
-    uint i;
-    Tile *tile_adj[3];
+    float mult, count;
+    Tile *tile_adj;
+    LightColor *color_adj[2];
+
+    count = 2;
 
     if (x < 1) {
         x = 1;
-    } else if (x >= WORLD_SIZE) {
-        x = WORLD_SIZE - 1;
+    } else if (x >= WORLD_SIZE - 1) {
+        x = WORLD_SIZE - 2;
     }
 
     if (z < 1) {
         z = 1;
-    } else if (z >= WORLD_SIZE) {
-        z = WORLD_SIZE - 1;
+    } else if (z >= WORLD_SIZE - 1) {
+        z = WORLD_SIZE - 2;
+    }
+
+    switch (side) {
+    case WALL_FRONT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x + 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x - 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x, y, z - 1);
+        break;
+    case WALL_BACK:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x - 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x + 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x, y, z + 1);
+        break;
+    case WALL_LEFT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x - 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x - 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z);
+        break;
+    case WALL_RIGHT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x + 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x + 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z);
+        break;
+    }
+
+    if (corner < 2) {
+        mult = 0.8f;
+    } else {
+        mult = 0.4f;
+    }
+
+    if (tile_adj && tile_adj->data) {
+        if (tile_adj->data->attr & TILE_FLOOR) {
+            color[0] += color_adj[1]->r * mult;
+            color[1] += color_adj[1]->g * mult;
+            color[2] += color_adj[1]->b * mult;
+            count--;
+        }
+    } else {
+        color[0] += color_adj[1]->r * mult;
+        color[1] += color_adj[1]->g * mult;
+        color[2] += color_adj[1]->b * mult;
+        count--;
+    }
+
+    color[0] += color_adj[0]->r * mult;
+    color[1] += color_adj[0]->g * mult;
+    color[2] += color_adj[0]->b * mult;
+
+    if (count > 1) {
+        color[0] *= 0.5f;
+        color[1] *= 0.5f;
+        color[2] *= 0.5f;
+    }
+}
+
+void 
+lightwalltopinterpolate(World *world, uint x, uint y, uint z,
+        float *color, uint corner)
+{
+    uint i;
+    LightColor *color_adj[3];
+
+    if (x < 1) {
+        x = 1;
+    } else if (x >= WORLD_SIZE - 1) {
+        x = WORLD_SIZE - 2;
+    }
+
+    if (z < 1) {
+        z = 1;
+    } else if (z >= WORLD_SIZE - 1) {
+        z = WORLD_SIZE - 2;
+    }
+
+    switch (corner) {
+    case TILE_BR:
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
+        break;
+    case TILE_BL:
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
+        break;
+    case TILE_TL:
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
+        break;
+    case TILE_TR:
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
     }
 
     for (i = 0; i < 3; i++) {
-        
+        color[0] += color_adj[i]->r;
+        color[1] += color_adj[i]->g;
+        color[2] += color_adj[i]->b;
+    }
+
+    color[0] *= 0.25;
+    color[1] *= 0.25;
+    color[2] *= 0.25;
+}
+
+void
+lightwallsubinterpolate(World *world, uint x, uint y, uint z,
+        float *color, uint side, uint corner)
+{
+    float count;
+    Tile *tile_adj;
+    LightColor *color_adj[2];
+
+    side -= 5;
+    count = 2;
+
+    if (x < 1) {
+        x = 1;
+    } else if (x >= WORLD_SIZE - 1) {
+        x = WORLD_SIZE - 2;
+    }
+
+    if (z < 1) {
+        z = 1;
+    } else if (z >= WORLD_SIZE - 1) {
+        z = WORLD_SIZE - 2;
+    }
+
+    switch (side) {
+    case WALL_FRONT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x + 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x - 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x, y, z - 1);
+        break;
+    case WALL_BACK:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x - 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x + 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x, y, z + 1);
+        break;
+    case WALL_LEFT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x - 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x - 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z);
+        break;
+    case WALL_RIGHT:
+        if (corner == TILE_BL || corner == TILE_TL) {
+            tile_adj = worldgettoptileat(world, x + 1, y, z + 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        } else {
+            tile_adj = worldgettoptileat(world, x + 1, y, z - 1);
+            color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        }
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z);
+        break;
+    }
+
+    if (tile_adj && tile_adj->data) {
+        if (tile_adj->data->attr & TILE_FLOOR) {
+            color[0] += color_adj[1]->r * 0.8f;
+            color[1] += color_adj[1]->g * 0.8f;
+            color[2] += color_adj[1]->b * 0.8f;
+            count--;
+        }
+    } else {
+        color[0] += color_adj[1]->r * 0.8f;
+        color[1] += color_adj[1]->g * 0.8f;
+        color[2] += color_adj[1]->b * 0.8f;
+        count--;
+    }
+
+    color[0] += color_adj[0]->r * 0.8f;
+    color[1] += color_adj[0]->g * 0.8f;
+    color[2] += color_adj[0]->b * 0.8f;
+
+    if (count > 1) {
+        color[0] *= 0.25f;
+        color[1] *= 0.25f;
+        color[2] *= 0.25f;
+    } else {
+        color[0] *= 0.5f;
+        color[1] *= 0.5f;
+        color[2] *= 0.5f;
     }
 }
 

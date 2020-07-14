@@ -156,7 +156,7 @@ castlight(Light *light, World *world, uint row, float startslope,
             rslope = (dx + 0.5) / (dy - 0.5);
 
             if (startslope == rslope) {
-                continue;
+                //continue;
             }
 
             if (startslope < rslope) {
@@ -183,7 +183,7 @@ castlight(Light *light, World *world, uint row, float startslope,
             
             if (dist2 < radius2) {
                 if (tile->data && tile->data->attr & TILE_WALL) {
-                    illuminate(light, ax, ay, radius2, dist2, 0.4);
+                    //illuminate(light, ax, ay, radius2, dist2, 0.4);
                 } else {
                     illuminate(light, ax, ay, radius2, dist2, 1.0);
                 }
