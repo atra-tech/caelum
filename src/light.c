@@ -49,10 +49,6 @@ lightsetcolor(Light *light, float r, float g, float b)
     light->color.r = r;
     light->color.g = g;
     light->color.b = b;
-    /*
-    light->color = COLOR_SET_R(light->color, r);
-    light->color = COLOR_SET_G(light->color, g);
-    light->color = COLOR_SET_B(light->color, b);*/
 }
 
 void
@@ -118,9 +114,6 @@ lightapplylight(Light *light, World *world)
             lightcell = worldgetlightcellat(world, x, y, z);
             cell = &light->lightmap[j + iidx];
 
-            /*if (*cell[0] < 0.001 || *cell[1] < 0.001 || *cell[2] < 0.001) {
-                continue;
-            }*/
             lightcell->r += cell->r;
             lightcell->g += cell->g;
             lightcell->b += cell->b;
@@ -131,7 +124,52 @@ lightapplylight(Light *light, World *world)
 void
 lightremovelight(Light *light, World *world)
 {
-    //TODO: Unmap light's color map from world tiles
+    int i, j, x, y, z; 
+    int imin, jmin, xmin, zmin, xmax, zmax, imax, jmax;
+    int lightmap_size = light->radius * 2 + 1;
+    uint zidx, iidx;
+    LightColor *lightcell;
+    LightColor *cell;
+    
+    y = light->y;
+    imin = 0;
+    jmin = 0;
+    xmin = light->x - light->radius;
+    zmin = light->z - light->radius;
+    xmax = light->x + light->radius;
+    zmax = light->z + light->radius;
+    imax = lightmap_size;
+    jmax = lightmap_size;
+
+    if (xmin < 0) {
+        jmin = 0 - xmin;
+        xmin = 0;
+    }
+    if (zmin < 0) {
+        imin = 0 - zmin;
+        zmin = 0;
+    }
+    if (xmax >= WORLD_SIZE) {
+        jmax = lightmap_size - (xmax - (WORLD_SIZE - 1)); 
+        xmax = WORLD_SIZE - 1;
+    }
+    if (zmax >= WORLD_SIZE) {
+        imax = lightmap_size - (zmax - (WORLD_SIZE - 1)); 
+        zmax = WORLD_SIZE - 1;
+    }
+
+    for (i = imin, z = zmin; i < imax; i++, z++) {
+        zidx = z * lightmap_size;
+        iidx = i * lightmap_size;
+        for (j = jmin, x = xmin; j < jmax; j++, x++) {
+            lightcell = worldgetlightcellat(world, x, y, z);
+            cell = &light->lightmap[j + iidx];
+
+            lightcell->r -= cell->r;
+            lightcell->g -= cell->g;
+            lightcell->b -= cell->b;
+        }
+    }
 }
 
 void

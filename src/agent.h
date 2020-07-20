@@ -12,6 +12,7 @@
 
 #include <cglm/cglm.h>
 #include "render.h"
+#include "physics.h"
 
 typedef struct World World;
 
@@ -20,6 +21,8 @@ typedef struct Agent {
     vec3 vel;
     mat4 modelmat;
     VBuffer vbo;
+    AABB2 aabb;
+    vec3 color;
     //Inventory inv
 } Agent;
 

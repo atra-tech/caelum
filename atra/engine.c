@@ -37,6 +37,8 @@ atrainit(const char* title, int width, int height, Window *win, Context *con)
                         SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_ACCELERATED_VISUAL, 1);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    //SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 16);
+    //SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 
     windowinit(win, title, width, height);
     contextinit(con, win);

@@ -47,6 +47,11 @@ mainstateinit(void)
     player->ent.ry = 0.00f;
     player->ent.rz = 0.00f;
 
+    player->aabb.x1 = player->ent.x - 0.2;
+    player->aabb.x2 = player->ent.x + 0.2;
+    player->aabb.y1 = player->ent.z - 0.2;
+    player->aabb.y2 = player->ent.z + 0.2;
+
     playercam->ent.x = 2.0f;
     playercam->ent.y = 16.0f;
     playercam->ent.z = 8.0f;
@@ -78,7 +83,7 @@ createtestworld(void)
                     x == 512 + SEGMENT_SIZE - 1 ||
                     z == 512 + SEGMENT_SIZE - 1) {
                 tile = worldgettoptileat(world, x, y, z);
-                tile->data = tilegetdata("res/tile/int_wall.abf");
+                tile->data = tilegetdata("res/tile/int_wall_lamp.abf");
             } else {
                 tile = worldgettoptileat(world, x, y, z);
                 tile->data = tilegetdata("res/tile/int_floor_tiled.abf");

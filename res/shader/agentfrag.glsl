@@ -9,6 +9,8 @@ uniform sampler2D albedo_map;
 uniform mat4 modelmat;
 uniform mat4 viewmat;
 
+uniform vec3 color;
+
 void main()
 {
     vec4 albedodata = texture2D(albedo_map, uvout);
@@ -17,5 +19,5 @@ void main()
     vec3 matdiffuse = albedodata.rgb;
     vec3 matambient = vec3(0.05, 0.05, 0.05) * matdiffuse;
 
-    Color = vec4(matambient + matdiffuse, texalpha);
+    Color = vec4(matdiffuse * color * 1.8, texalpha);
 }
