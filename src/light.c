@@ -54,8 +54,17 @@ lightsetcolor(Light *light, float r, float g, float b)
 void
 lightcalclightmap(Light *light, World *world)
 {
-    uint i, x, y;
+    uint i, x, y, mapsize;
     LightColor *cell;
+
+    mapsize = (light->radius * 2 + 1) * (light->radius * 2 + 1);
+
+    for (i = 0; i < mapsize; i++) {
+        cell = &light->lightmap[i];
+        cell->r = 0.0f;
+        cell->g = 0.0f;
+        cell->b = 0.0f;
+    }
 
     for (i = 0; i < 8; i++) {
         castlight(light, world, 1, 1.0, 0.0, mults[0][i], mults[1][i],
@@ -192,10 +201,6 @@ castlight(Light *light, World *world, uint row, float startslope,
         for (dx = -i, dy = -i; dx <= 0; dx++) {
             lslope = (dx - 0.5) / (dy + 0.5);
             rslope = (dx + 0.5) / (dy - 0.5);
-
-            if (startslope == rslope) {
-                //continue;
-            }
 
             if (startslope < rslope) {
                 continue;

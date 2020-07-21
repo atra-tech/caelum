@@ -13,26 +13,6 @@
 
 #include <cglm/cglm.h>
 #include "util/util.h"
-/*
-#define COLOR_GET_R(c) ((c >> 16) & 0xFF)
-#define COLOR_GET_G(c) ((c >> 8) & 0xFF)
-#define COLOR_GET_B(c) ((c >> 0) & 0xFF)
-
-#define COLOR_SET_R(c, x) ((c & 0xFF00FFFF) | (x << 16))
-#define COLOR_SET_G(c, x) ((c & 0xFFFF00FF) | (x << 8))
-#define COLOR_SET_B(c, x) ((c & 0xFFFFFF00) | (x << 0))
-
-#define COLOR_ADD_R(c, x) ((x << 16) | c)
-#define COLOR_ADD_G(c, x) ((x << 8) | c)
-#define COLOR_ADD_B(c, x) ((x << 0) | c)
-#define COLOR_ADD(c, x) (c | x)
-*/
-/*
-typedef struct LightVec {
-    float x, y, z;
-    float r, g, b, a;
-} LightColor;
-*/
 
 typedef struct World World;
 
@@ -42,8 +22,8 @@ typedef struct LightColor {
 
 typedef struct Light {
     float x, y, z;
-    LightColor color;
     uint radius;
+    LightColor color;
     LightColor *lightmap;
 } Light;
 

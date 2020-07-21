@@ -36,11 +36,12 @@ typedef struct Layer {
 } Layer;
 
 typedef struct Segment {
-    uint x, z;
+    uint x, z, dirty, relight;
     Layer *layers;
     VBuffer vbo;
-    List *vertlights;
+    List *vertlights; /* VBO light data */
     mat4 modelmat;
+    List *lights; /* Worldspace light entities */
 } Segment;
 
 typedef struct World {
@@ -63,5 +64,10 @@ Tile *worldgettoptileat(World *world, uint x, uint y, uint z);
 Tile *worldgetsubtileat(World *world, uint x, uint y, uint z);
 Tile *segmentgettoptile(Segment *seg, uint x, uint y, uint z);
 Tile *segmentgetsubtile(Segment *seg, uint x, uint y, uint z);
+
+void worldaddlight(World *world, uint x, uint y, uint z,
+        float r, float g, float b, uint radius);
+void worldremovelight(World *world, uint x, uint y, uint z);
+void segmentrelight(World *world, Segment *seg);
 
 #endif /* CAELUM_WORLD_H */

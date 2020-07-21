@@ -18,7 +18,7 @@
 #include "state.h"
 #include "opengl.h"
 
-#define ENGINE_VERSION "v0.1.0 ALPHA"
+#define ENGINE_VERSION "v0.1.1 ALPHA"
 
 void atrainit(const char* title, int width, int height, Window *, Context *);
 void atrapushstate(State *state);

@@ -158,6 +158,7 @@ static Segment *segmentcreatematrix(uint rows, uint cols);
 static Layer *layercreatearray(uint count);
 static void segmentdeletematrix(Segment *segs, uint rows, uint cols);
 static void layerdeletearray(Layer *layers, uint count);
+static void layerclearlight(Layer *layer);
 static void lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
 static void lightwallsideinterpolate(World *world, uint x, uint y, uint z,
@@ -291,7 +292,6 @@ selectioninit(void)
             norm[1] = worldnorms[normidx + 1];
             norm[2] = worldnorms[normidx + 2];
             
-
             if (j < 2) {
                 vert[1] += 0.02f;
             } else {
@@ -381,9 +381,12 @@ segmentcreatematrix(uint rows, uint cols)
             idx = j + i * SEGMENT_COUNT;
             segs[idx].x = i;
             segs[idx].z = j;
+            segs[idx].dirty = 1;
+            segs[idx].relight = 1;
             segs[idx].layers = layercreatearray(WORLD_HEIGHT);
             vbufinit(&segs[idx].vbo);
             segs[idx].vertlights = listcreate();
+            segs[idx].lights = listcreate();
             glm_mat4_identity(segs[idx].modelmat);
             glm_translate_x(segs[idx].modelmat, i * SEGMENT_SIZE);
             glm_translate_z(segs[idx].modelmat, j * SEGMENT_SIZE);
@@ -413,6 +416,8 @@ void
 worlddelete(World *world)
 {
     segmentdeletematrix(world->segs, SEGMENT_COUNT, SEGMENT_COUNT);
+    selectiondelete();
+    spacebackgrounddelete();
     free(world);
 }
 
@@ -425,6 +430,7 @@ segmentdeletematrix(Segment *segs, uint rows, uint cols)
         layerdeletearray(segs[i].layers, WORLD_HEIGHT);
         vbufdelete(&segs[i].vbo);
         listdelete(segs[i].vertlights);
+        listdelete(segs[i].lights);
     }
     free(segs);
 }
@@ -442,6 +448,20 @@ layerdeletearray(Layer *layers, uint count)
         //listdelete(layers->links);
     }
     free(layers);
+}
+
+void
+selectiondelete(void)
+{
+    shaderdelete(&selection.shader);
+    vbufdelete(&selection.vbo);
+}
+
+void
+spacebackgrounddelete(void)
+{
+    shaderdelete(&space_bg.shader);
+    vbufdelete(&space_bg.vbo);
 }
 
 void
@@ -471,35 +491,104 @@ worldhandle(World *world, Event *e)
 {
     //  Handle click events or key presses on world objects.
     //  TODO: tile picking algorithm
-    int mx, my, mbut;
+    int i, j;
+    int k, mx, my, mbut, tile_x, tile_z, relight;
     vec3 ray;
-    float tile_x, tile_z, dist;
+    float dist;
     Camera *cam;
     Tile *tile;
+    Segment *seg;
+    Light *light;
 
     mbut = mousegetstate(&mx, &my);
     cam = getmaincamera();
+    relight = 0;
 
     mousecalcray(cam, mx, my, ray);
     dist = fabs(cam->ent.y / ray[1]);
     tile_x = ray[0] * dist + cam->ent.x;
     tile_z = ray[2] * dist + cam->ent.z;
+    //logprint(LOG_INFO, "Got tile: x:$i, z:$i", tile_x, tile_z);
+
+    if (tile_x < 1 || tile_x > WORLD_SIZE - 2 ||
+            tile_z < 1 || tile_z > WORLD_SIZE - 2) {
+        return;
+    }        
     tile = worldgettoptileat(world, tile_x, 0, tile_z);
-        
     glm_mat4_identity(selection.modelmat);    
-    glm_translate_x(selection.modelmat, (int)tile_x);
-    glm_translate_z(selection.modelmat, (int)tile_z);
+    glm_translate_x(selection.modelmat, tile_x);
+    glm_translate_z(selection.modelmat, tile_z);
 
     if (!tile->data) {
         glm_translate_y(selection.modelmat, -0.17);
     }
-    
+   
+    //TODO: MAJOR REWORK FOR INVENTORY -> TILE PLACEMENT
     if (e->type == SDL_MOUSEMOTION) {
+
     } else if (e->type == SDL_MOUSEBUTTONDOWN) {
-        logprint(LOG_INFO, "Got tile: x:$i, z:$i", (int)tile_x, (int)tile_z);
+        tile = worldgettoptileat(world, tile_x, 0, tile_z);
+        if (e->button.button == SDL_BUTTON_LEFT) {
+            if (tile->data) {
+                if (tile->data->attr & TILE_WALL) {
+                    tile->data = tilegetdata("res/tile/int_floor_tiled.abf");
+                    relight = 1;
+                } else {
+                    tile->data = NULL;
+                }
+            } else {
+                tile = worldgetsubtileat(world, tile_x, 0, tile_z);
+
+                if (tile->data) {
+                    tile->data = NULL;
+                }
+            }
+        } else if (e->button.button == SDL_BUTTON_RIGHT) {
+            if (tile->data) {
+                if (tile->data->attr & TILE_FLOOR) {
+                    tile->data = tilegetdata("res/tile/int_wall_lamp.abf");
+                    relight = 1;
+                }
+            } else {
+                Tile *top = tile;
+                tile = worldgetsubtileat(world, tile_x, 0, tile_z);
+
+                if (tile->data) {
+                    top->data = tilegetdata("res/tile/int_floor_tiled.abf");
+                } else {
+                    tile->data = tilegetdata("res/tile/maint_floor.abf");
+                }
+            }
+        }
+        seg = worldgetsegmentat(world, tile_x, tile_z);
+        seg->dirty = 1;
     } else if (e->type == SDL_MOUSEBUTTONUP) {
 
     }
+    
+    if (relight) {
+        for (i = -1; i <= 1; i++) {
+            for (j = -1; j <= 1; j++) {
+                seg = worldgetsegmentat(world,
+                        tile_x + i * SEGMENT_SIZE,
+                        tile_z + j * SEGMENT_SIZE);
+                seg->relight = 1;
+            }
+        }
+    }
+/*    for (i = -1; i < 1; i++) {
+        for (j = -1; j < 1; j++) {
+            seg = worldgetsegmentat(world,
+                    tile_x + i * SEGMENT_SIZE,
+                    tile_z + j * SEGMENT_SIZE);
+
+            for (k = 0; k < seg->lights->size; k++) {
+                light = listat(seg->lights, k);
+                lightcalclightmap(light, world);
+                lightapplylight(light, world);
+            }
+        }
+    }*/
 }
 
 void
@@ -508,6 +597,21 @@ worldupdate(World *world, float dt)
     //  Update pressure and temperature values and air concentration
     //  Step pipe, wire values
     //  Call tile entities to update their states
+}
+
+void
+layerclearlight(Layer *layer)
+{
+    uint x, z, idx;
+    
+    for (x = 0; x < SEGMENT_SIZE; x++) {
+        for (z = 0; z < SEGMENT_SIZE; z++) {
+            idx = x * SEGMENT_SIZE + z;
+            layer->light[idx].r = 0.0f;
+            layer->light[idx].g = 0.0f;
+            layer->light[idx].b = 0.0f;
+        }
+    }
 }
 
 void
@@ -525,7 +629,7 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
     Tile *tile_adj[4] = {NULL, NULL, NULL, NULL};
 
     world_x = seg->x * SEGMENT_SIZE + x;
-    world_z = seg->x * SEGMENT_SIZE + z;
+    world_z = seg->z * SEGMENT_SIZE + z;
 
     if (world_z < WORLD_SIZE - 1) { 
         tile_adj[0] = worldgettoptileat(world, world_x, y, world_z + 1);
@@ -823,7 +927,7 @@ segmentmesh(World *world, Segment *seg)
             }
         }
     }
-    logprint(LOG_INFO, "Meshed segment");
+    logprint(LOG_INFO, "Meshed segment: x:$i, z:$i", seg->x, seg->z);
     vbufbind(&seg->vbo);
     vbufbindvbo(&seg->vbo, 3, seg->vertlights);
 }
@@ -834,12 +938,11 @@ worldrender(World *world, Camera *cam)
     static uint playerseg[2] = {128, 128};
     Agent *player = agentgetplayer();
     Segment *seg;
-    uint pseg_x, pseg_z, remesh;
+    uint pseg_x, pseg_z;
     int i, j, seg_x, seg_z;
 
     pseg_x = player->ent.x / SEGMENT_SIZE;
     pseg_z = player->ent.z / SEGMENT_SIZE;
-    remesh = (pseg_x != playerseg[0] || pseg_z != playerseg[1]);
     playerseg[0] = pseg_x;
     playerseg[1] = pseg_z;
 
@@ -862,9 +965,56 @@ worldrender(World *world, Camera *cam)
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    
+    //TODO: Move to function
+    for (i = -1; i <= 1; i++) {
+        seg_x = pseg_x + i;
+
+        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
+            continue;
+        }
+
+        for (j = -1; j <= 1; j++) {
+            seg_z = pseg_z + j;
+            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
+            
+            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
+                continue;
+            }
+
+            if (seg->relight) {
+                layerclearlight(&seg->layers[0]);
+            }
+        }
+    }
+
+    //TODO: Move to function
+    for (i = -1; i <= 1; i++) {
+        seg_x = pseg_x + i;
+
+        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
+            continue;
+        }
+
+        for (j = -1; j <= 1; j++) {
+            seg_z = pseg_z + j;
+            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
+            
+            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
+                continue;
+            }
+
+            if (seg->relight) {
+                segmentrelight(world, seg);
+                seg->relight = 0;
+                seg->dirty = 1;
+            }
+        }
+    }
 
     for (i = -2; i <= 2; i++) {
         seg_x = pseg_x + i;
+
         if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
             continue;
         }
@@ -876,9 +1026,10 @@ worldrender(World *world, Camera *cam)
             if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
                 continue;
             }
-
-            if (remesh) {
+            
+            if (seg->dirty) {
                 segmentmesh(world, seg);
+                seg->dirty = 0;
             }
             glBindVertexArray(seg->vbo.vao);
             shaderloadmodelmat(&worldshader, seg->modelmat);
@@ -888,8 +1039,8 @@ worldrender(World *world, Camera *cam)
     }
     shaderunbind();
     
-    glDisable(GL_CULL_FACE);
     selectionrender(cam);
+    //glDisable(GL_CULL_FACE);
 }
 
 void
@@ -920,7 +1071,7 @@ spacebackgroundrender(Camera *cam)
 
 void
 selectionrender(Camera *cam)
-{   
+{
     shaderbind(&selection.shader);
     shaderloadprojviewmat(&selection.shader, cam->projviewmat);
     shaderloadviewmat(&selection.shader, cam->viewmat);
@@ -933,9 +1084,64 @@ selectionrender(Camera *cam)
 }
 
 void
-selectiondelete(void)
+worldaddlight(World *world, uint x, uint y, uint z,
+        float r, float g, float b, uint radius)
 {
+    int i, j;
+    Light *light;
+    Segment *seg;
+
+    light = lightcreate(x, y, z, radius);
+    lightsetcolor(light, r, g, b);
+    //lightcalclightmap(light, world);
+    //lightapplylight(light, world);
     
+    seg = worldgetsegmentat(world, x, z);
+    listpushback(seg->lights, light);
+
+    for (i = -1; i <= 1; i++) {
+        for (j = -1; j <= 1; j++) {
+            seg = worldgetsegmentat(world,
+                    x + i * SEGMENT_SIZE,
+                    z + j * SEGMENT_SIZE);
+            seg->relight = 1;
+        }
+    }
+}
+
+void
+worldremovelight(World *world, uint x, uint y, uint z)
+{
+    uint i;
+    Segment *seg;
+    Light *light;
+
+    seg = worldgetsegmentat(world, x, z);
+
+    for (i = 0; i < seg->lights->size; i++) {
+        light = listat(seg->lights, i);
+
+        if ((uint)light->x == x &&
+                (uint)light->y == y &&
+                (uint)light->z == z) {
+            lightremovelight(light, world);
+            lightdelete(light);
+        }
+    }
+}
+
+void
+segmentrelight(World *world, Segment *seg)
+{
+    uint i;
+    Light *light;
+
+    for (i = 0; i < seg->lights->size; i++) {
+        light = listat(seg->lights, i);
+
+        lightcalclightmap(light, world);
+        lightapplylight(light, world);
+    }
 }
 
 void

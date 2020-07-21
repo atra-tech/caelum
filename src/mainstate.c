@@ -103,15 +103,8 @@ createtestworld(void)
     worldgettoptileat(world, 524, 0, 527)->data =
         tilegetdata("res/tile/int_floor_tiled.abf");
 
-    light = lightcreate(515.0, 0.5, 516.0, 10);
-    lightsetcolor(light, 0.1, 0.5, 1.0);
-    lightcalclightmap(light, world);
-    lightapplylight(light, world);
-    light = lightcreate(524.0, 0.5, 526.0, 14);
-    //light = lightcreate(3.0, 0.5, 3.0, 10);
-    lightsetcolor(light, 1.0, 0.5, 0.1);
-    lightcalclightmap(light, world);
-    lightapplylight(light, world);
+    worldaddlight(world, 515, 0, 516, 0.1, 0.5, 1.0, 10);
+    worldaddlight(world, 524, 0, 526, 1.0, 0.5, 0.1, 14);
 }
 
 void
