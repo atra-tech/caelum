@@ -33,7 +33,7 @@ listcreate()
 void *
 listat(List *list, uint index)
 {
-    if (index >= list->size || index < 0) {
+    if (index >= list->size) {
         logprint(LOG_ERROR, "list: Unable to get element: "\
                             "Index out of range");
         return NULL;

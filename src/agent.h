@@ -14,7 +14,7 @@
 #include "render.h"
 #include "physics.h"
 
-typedef struct World World;
+struct World;
 
 typedef struct Agent {
     Entity ent;
@@ -41,7 +41,7 @@ void agentdelete(Agent *agent);
 void agentshutdown(void);
 
 void playerhandle(Event *e);
-void playerupdate(World *world, float dt);
+void playerupdate(struct World *world, float dt);
 void playerrender(void);
 
 #endif /* CAELUM_AGENT_H */

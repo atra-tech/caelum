@@ -71,7 +71,6 @@ createtestworld(void)
 {
     uint x, y, z;
     Tile *tile;
-    Light *light;
 
     y = 0;
 
@@ -83,14 +82,14 @@ createtestworld(void)
                     x == 512 + SEGMENT_SIZE - 1 ||
                     z == 512 + SEGMENT_SIZE - 1) {
                 tile = worldgettoptileat(world, x, y, z);
-                tile->data = tilegetdata("res/tile/int_wall_lamp.abf");
+                tile->data = tilegetdata("int_wall_lamp");
             } else {
                 tile = worldgettoptileat(world, x, y, z);
-                tile->data = tilegetdata("res/tile/int_floor_tiled.abf");
+                tile->data = tilegetdata("int_floor_tiled");
             }
         }
     }
-    TileData *wall = tilegetdata("res/tile/int_wall_lamp.abf");
+    TileData *wall = tilegetdata("int_wall_lamp");
     worldgettoptileat(world, 522, 0, 518)->data = wall;
     worldgettoptileat(world, 522, 0, 519)->data = wall;
     worldgettoptileat(world, 522, 0, 520)->data = wall;
@@ -101,7 +100,7 @@ createtestworld(void)
     worldgettoptileat(world, 519, 0, 516)->data = wall;
     worldgettoptileat(world, 520, 0, 516)->data = wall;
     worldgettoptileat(world, 524, 0, 527)->data =
-        tilegetdata("res/tile/int_floor_tiled.abf");
+        tilegetdata("int_floor_tiled");
 
     worldaddlight(world, 515, 0, 516, 0.1, 0.5, 1.0, 10);
     worldaddlight(world, 524, 0, 526, 1.0, 0.5, 0.1, 14);

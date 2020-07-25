@@ -20,7 +20,7 @@
 #define TILE_TEXTURE_SIZE 32
 
 static List * tileloadmanifest(const char *path);
-static void tileloadtiledata(const char *path);
+static TileData * tileloadtiledata(const char *path);
 static void tilecalctileuvs(TileData *tile);
 
 static Texture tiletex_albedo;
@@ -32,7 +32,7 @@ static HTable *tiledata;
 void
 tiledatabaseinit(const char *manifest)
 {
-    uint i, pathlen;
+    uint i, pathlen, entrylen;
     List *entries;
     char *pathcpy = malloc((strlen(manifest) + 1) * sizeof(char));
     char *chr, *file, *entry;
@@ -63,14 +63,14 @@ tiledatabaseinit(const char *manifest)
 
     for (i = 0; i < entries->size; i++) {
         entry = listat(entries, i);
+        entrylen = strlen(entry);
         file = malloc((pathlen + strlen(entry) + 5) * sizeof(char));
         strcpy(file, pathcpy);
         strcat(file, entry);
         strcat(file, TILEDATA_FILE_EXT);
-        tileloadtiledata(file);
+        htableadd(tiledata, entry, tileloadtiledata(file));
         free(file);
     }
-    listdealloc(entries);
     listdelete(entries);
     free(pathcpy);
 }
@@ -97,8 +97,8 @@ tileloadmanifest(const char *path)
     List *manifest = listcreate();
 
     if (!data) {
-        logprint(LOG_FATAL, "tile: Tile manifest could not be opened!");
-        return NULL;
+        logprint(LOG_FATAL, "tile: Tile manifest could not be opened.");
+        die("Fatal error! Shutting down.");
     }
 
     /* Copy manifest data into a list */
@@ -120,13 +120,13 @@ tileloadmanifest(const char *path)
     return manifest;
 }
 
-void
+TileData *
 tileloadtiledata(const char *path)
 {
     uint entry;
     char *data = loadfile(path);
     char *token = strtok(data, " (),\n");
-    char *pathcpy = calloc(strlen(path) + 1, sizeof(char));
+    //char *pathcpy = calloc(strlen(path) + 1, sizeof(char));
     TileData *result = malloc(sizeof(TileData));
     
     for (entry = 0; token; entry++) {
@@ -160,11 +160,13 @@ tileloadtiledata(const char *path)
         }
         token = strtok(NULL, " (),\n");
     }
-    strcpy(pathcpy, path);
+    //strcpy(pathcpy, path);
     logprint(LOG_INFO, "Loaded tile data from $s", path);
     tilecalctileuvs(result);
-    htableadd(tiledata, pathcpy, result);
+    //htableadd(tiledata, pathcpy, result);
     free(data);
+
+    return result;
 }
 
 void

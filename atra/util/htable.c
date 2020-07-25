@@ -16,11 +16,10 @@
 #include "util.h"
 
 #define INIT_TABLE_SIZE 16
-#define MAX_TABLE_SIZE
 #define MAX_LOAD_FACTOR 0.7
 
 static void htablegrow(HTable *table);
-static void htableshrink(HTable *table);
+/*static void htableshrink(HTable *table);*/
 static int htablenullcheck(HTable *table, const char *msg);
 
 HTable *
@@ -156,6 +155,7 @@ htableadd(HTable *table, void *key, void *val)
         if (!keys[i]) {
             keys[i] = key;
             vals[i] = val;
+            logprint(LOG_INFO, "HTable: Added Elem: Key=\"$s\"", (char *)key);
             break;
         } else {
             if (table->equal(key, keys[i]))
@@ -277,7 +277,7 @@ int
 htablenullcheck(HTable *table, const char *msg)
 {
     if (!table) {
-        logprint(LOG_ERROR, "htable: $s: Received NULL pointer");
+        logprint(LOG_ERROR, "htable: $s: Received NULL pointer: $s", msg);
         return 1;
     }
     return 0;
@@ -286,50 +286,11 @@ htablenullcheck(HTable *table, const char *msg)
 uint
 htablestringhash(const void *str)
 {
-    /*uint hash = 0, tmp;
-    int rem, len = strlen(str);
-    const char *tmpstr = str;
-
-    rem = len & 3;
-    len >>= 2;
-
-    for (; len > 0; len--) {
-        hash += htableget16bits(str);
-        tmp = (htableget16bits(tmpstr + 2) << 11) ^ hash;
-        hash = (hash << 16) ^ tmp;
-        tmpstr += 2 * sizeof(uint);
-        hash += hash >> 11;
-    }
-
-    switch (rem) {
-    case 1:
-        hash += *tmpstr;
-        hash ^= hash << 10;
-        hash += hash >> 1;
-        break;
-    case 2:
-        hash += htableget16bits(str);
-        hash ^= hash << 11;
-        hash += hash >> 17;
-        break;
-    case 3:
-        hash += htableget16bits(str);
-        hash ^= hash << 16;
-        hash ^= tmpstr[sizeof(uint)] << 18;
-        hash += hash >> 11;
-    }
-
-    hash ^= hash << 3;
-    hash += hash >> 5;
-    hash ^= hash << 4;
-    hash += hash >> 17;
-    hash ^= hash << 25;
-    hash += hash >> 6;*/
-    uint hash = 0;
+    ulong hash = 0;
     int c;
-    const char *pstr = str;
+    const uchar *pstr = str;
 
-    while ((c = *pstr++)) {
+    for (c = *pstr++; c; c = *pstr++) {
         hash = c + (hash << 6) + (hash << 16) - hash;
     }
 

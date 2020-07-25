@@ -16,6 +16,8 @@
 #include "light.h"
 #include "input.h"
 #include "core.h"
+#include "thread.h"
+//#include "thpool.h"
 
 static const float wallverts[] =
 {
@@ -154,11 +156,16 @@ enum {
     TILE_BL,
 };
 
+struct SegJobArgs {
+    Segment *seg;
+    World *world;
+};
+
 static Segment *segmentcreatematrix(uint rows, uint cols);
 static Layer *layercreatearray(uint count);
 static void segmentdeletematrix(Segment *segs, uint rows, uint cols);
 static void layerdeletearray(Layer *layers, uint count);
-static void layerclearlight(Layer *layer);
+//static void layerclearlight(Layer *layer);
 static void lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
 static void lightwallsideinterpolate(World *world, uint x, uint y, uint z,
@@ -176,6 +183,7 @@ static void selectiondelete(void);
 
 static List *tiledata;
 static Shader worldshader;
+static TPool *workerpool;
 
 /* Space background data */
 static struct SpaceBackground {
@@ -202,6 +210,8 @@ worldinit()
 
     spacebackgroundinit();
     selectioninit();
+
+    workerpool = tpoolcreate(SDL_GetCPUCount());
 }
 
 void
@@ -355,7 +365,7 @@ worldcreate()
 
             seg = &world->segs[seg_y + seg_x * SEGMENT_COUNT];
             layer = &seg->layers[0];
-            data = tilegetdata("res/tile/maint_floor.abf");
+            data = tilegetdata("maint_floor");
 
             for (tile_x = 0; tile_x < SEGMENT_SIZE; tile_x++) {
                 for (tile_y = 0; tile_y < SEGMENT_SIZE; tile_y++) {
@@ -416,6 +426,7 @@ void
 worlddelete(World *world)
 {
     segmentdeletematrix(world->segs, SEGMENT_COUNT, SEGMENT_COUNT);
+    world->segs = NULL;
     selectiondelete();
     spacebackgrounddelete();
     free(world);
@@ -424,12 +435,16 @@ worlddelete(World *world)
 void
 segmentdeletematrix(Segment *segs, uint rows, uint cols)
 {
-    uint i, segcount = rows * cols;
+    uint i, j, segcount = rows * cols;
 
     for (i = 0; i < segcount; i++) {
         layerdeletearray(segs[i].layers, WORLD_HEIGHT);
         vbufdelete(&segs[i].vbo);
         listdelete(segs[i].vertlights);
+        
+        for (j = 0; j < segs[i].lights->size; j++) {
+            lightdelete(listat(segs[i].lights, j));
+        }
         listdelete(segs[i].lights);
     }
     free(segs);
@@ -492,13 +507,12 @@ worldhandle(World *world, Event *e)
     //  Handle click events or key presses on world objects.
     //  TODO: tile picking algorithm
     int i, j;
-    int k, mx, my, mbut, tile_x, tile_z, relight;
+    int mx, my, mbut, tile_x, tile_z, relight;
     vec3 ray;
     float dist;
     Camera *cam;
     Tile *tile;
     Segment *seg;
-    Light *light;
 
     mbut = mousegetstate(&mx, &my);
     cam = getmaincamera();
@@ -531,7 +545,7 @@ worldhandle(World *world, Event *e)
         if (e->button.button == SDL_BUTTON_LEFT) {
             if (tile->data) {
                 if (tile->data->attr & TILE_WALL) {
-                    tile->data = tilegetdata("res/tile/int_floor_tiled.abf");
+                    tile->data = tilegetdata("int_floor_tiled");
                     relight = 1;
                 } else {
                     tile->data = NULL;
@@ -546,7 +560,7 @@ worldhandle(World *world, Event *e)
         } else if (e->button.button == SDL_BUTTON_RIGHT) {
             if (tile->data) {
                 if (tile->data->attr & TILE_FLOOR) {
-                    tile->data = tilegetdata("res/tile/int_wall_lamp.abf");
+                    tile->data = tilegetdata("int_wall_lamp");
                     relight = 1;
                 }
             } else {
@@ -554,9 +568,9 @@ worldhandle(World *world, Event *e)
                 tile = worldgetsubtileat(world, tile_x, 0, tile_z);
 
                 if (tile->data) {
-                    top->data = tilegetdata("res/tile/int_floor_tiled.abf");
+                    top->data = tilegetdata("int_floor_tiled");
                 } else {
-                    tile->data = tilegetdata("res/tile/maint_floor.abf");
+                    tile->data = tilegetdata("maint_floor");
                 }
             }
         }
@@ -576,19 +590,6 @@ worldhandle(World *world, Event *e)
             }
         }
     }
-/*    for (i = -1; i < 1; i++) {
-        for (j = -1; j < 1; j++) {
-            seg = worldgetsegmentat(world,
-                    tile_x + i * SEGMENT_SIZE,
-                    tile_z + j * SEGMENT_SIZE);
-
-            for (k = 0; k < seg->lights->size; k++) {
-                light = listat(seg->lights, k);
-                lightcalclightmap(light, world);
-                lightapplylight(light, world);
-            }
-        }
-    }*/
 }
 
 void
@@ -597,21 +598,6 @@ worldupdate(World *world, float dt)
     //  Update pressure and temperature values and air concentration
     //  Step pipe, wire values
     //  Call tile entities to update their states
-}
-
-void
-layerclearlight(Layer *layer)
-{
-    uint x, z, idx;
-    
-    for (x = 0; x < SEGMENT_SIZE; x++) {
-        for (z = 0; z < SEGMENT_SIZE; z++) {
-            idx = x * SEGMENT_SIZE + z;
-            layer->light[idx].r = 0.0f;
-            layer->light[idx].g = 0.0f;
-            layer->light[idx].b = 0.0f;
-        }
-    }
 }
 
 void
@@ -842,7 +828,6 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
     LightColor *color;
 
     indexcount = vbo->indxcount / 3;
-    y -= 0.1f;
     color = &seg->layers[y].light[z + x * SEGMENT_SIZE];
 
     for (i = 0; i < 5; i++) {
@@ -904,10 +889,6 @@ segmentmesh(World *world, Segment *seg)
     Layer *layer;
     Tile *tile;
 
-    vbufreset(&seg->vbo);
-    listdealloc(seg->vertlights);
-    listclear(seg->vertlights);
-
     //TODO:  Only mesh on player's y-level and below
     for (y = 0; y < WORLD_HEIGHT; y++) {
         layer = &seg->layers[y];
@@ -927,15 +908,68 @@ segmentmesh(World *world, Segment *seg)
             }
         }
     }
-    logprint(LOG_INFO, "Meshed segment: x:$i, z:$i", seg->x, seg->z);
-    vbufbind(&seg->vbo);
-    vbufbindvbo(&seg->vbo, 3, seg->vertlights);
+/*    logprint(LOG_INFO, "Meshed segment: x:$i, z:$i", seg->x, seg->z);
+*/
+}
+
+void
+segmentlightjob(void *arg)
+{
+    struct SegJobArgs *args;
+    args = arg;
+
+    Segment *seg = args->seg;
+    World *world = args->world;
+
+    segmentrelight(world, seg);
+    seg->relight = 0;
+    seg->dirty = 1;
+
+    free(args);
+}
+
+void
+segmentmeshjob(void *arg)
+{
+    struct SegJobArgs *args;
+    args = arg;
+
+    Segment *seg = args->seg;
+    World *world = args->world;
+
+    segmentmesh(world, seg);
+
+    printf("[Thread: %lu] Meshed segment: x=%d, z=%d\n",
+            SDL_ThreadID(), seg->x, seg->z);
+    
+    free(args);
+}
+
+void segmentqueueremesh(World *world, Segment *seg)
+{
+    struct SegJobArgs *args; 
+    
+    args = malloc(sizeof(struct SegJobArgs));
+    args->seg = seg;
+    args->world = world;
+
+    tpooladdjob(workerpool, segmentmeshjob, args);
+}
+
+void segmentqueuerelight(World *world, Segment *seg)
+{
+    struct SegJobArgs *args; 
+    
+    args = malloc(sizeof(struct SegJobArgs));
+    args->seg = seg;
+    args->world = world;
+
+    tpooladdjob(workerpool, segmentlightjob, args);
 }
 
 void
 worldrender(World *world, Camera *cam)
 {
-    static uint playerseg[2] = {128, 128};
     Agent *player = agentgetplayer();
     Segment *seg;
     uint pseg_x, pseg_z;
@@ -943,8 +977,6 @@ worldrender(World *world, Camera *cam)
 
     pseg_x = player->ent.x / SEGMENT_SIZE;
     pseg_z = player->ent.z / SEGMENT_SIZE;
-    playerseg[0] = pseg_x;
-    playerseg[1] = pseg_z;
 
     spacebackgroundrender(cam);
 
@@ -965,16 +997,38 @@ worldrender(World *world, Camera *cam)
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-    
-    //TODO: Move to function
-    for (i = -1; i <= 1; i++) {
+
+    //TODO: Split surrounding segment checks into single loop with list
+    for (i = -2; i <= 2; i++) {
         seg_x = pseg_x + i;
 
         if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
             continue;
         }
 
-        for (j = -1; j <= 1; j++) {
+        for (j = -2; j <= 2; j++) {
+            seg_z = pseg_z + j;
+            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
+            
+            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
+                continue;
+            }
+
+            if (seg->relight || seg->dirty) {
+                vbufreset(&seg->vbo);
+                listdealloc(seg->vertlights);
+                listclear(seg->vertlights);
+            }
+        }
+    }
+    for (i = -2; i <= 2; i++) {
+        seg_x = pseg_x + i;
+
+        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
+            continue;
+        }
+
+        for (j = -2; j <= 2; j++) {
             seg_z = pseg_z + j;
             seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
             
@@ -983,34 +1037,11 @@ worldrender(World *world, Camera *cam)
             }
 
             if (seg->relight) {
-                layerclearlight(&seg->layers[0]);
+                segmentqueuerelight(world, seg);
             }
         }
     }
-
-    //TODO: Move to function
-    for (i = -1; i <= 1; i++) {
-        seg_x = pseg_x + i;
-
-        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
-            continue;
-        }
-
-        for (j = -1; j <= 1; j++) {
-            seg_z = pseg_z + j;
-            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
-            
-            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
-                continue;
-            }
-
-            if (seg->relight) {
-                segmentrelight(world, seg);
-                seg->relight = 0;
-                seg->dirty = 1;
-            }
-        }
-    }
+    tpoolwait(workerpool);
 
     for (i = -2; i <= 2; i++) {
         seg_x = pseg_x + i;
@@ -1026,11 +1057,35 @@ worldrender(World *world, Camera *cam)
             if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
                 continue;
             }
-            
+
             if (seg->dirty) {
-                segmentmesh(world, seg);
+                segmentqueueremesh(world, seg);
+            }
+        }
+    }
+    tpoolwait(workerpool);
+
+    for (i = -2; i <= 2; i++) {
+        seg_x = pseg_x + i;
+
+        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
+            continue;
+        }
+
+        for (j = -2; j <= 2; j++) {
+            seg_z = pseg_z + j;
+            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
+            
+            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
+                continue;
+            }
+
+            if (seg->dirty) {
+                vbufbind(&seg->vbo);
+                vbufbindvbo(&seg->vbo, 3, seg->vertlights);
                 seg->dirty = 0;
             }
+
             glBindVertexArray(seg->vbo.vao);
             shaderloadmodelmat(&worldshader, seg->modelmat);
             glDrawElements(GL_TRIANGLES, seg->vbo.indxcount,
@@ -1038,9 +1093,7 @@ worldrender(World *world, Camera *cam)
         }
     }
     shaderunbind();
-    
     selectionrender(cam);
-    //glDisable(GL_CULL_FACE);
 }
 
 void
@@ -1093,9 +1146,6 @@ worldaddlight(World *world, uint x, uint y, uint z,
 
     light = lightcreate(x, y, z, radius);
     lightsetcolor(light, r, g, b);
-    //lightcalclightmap(light, world);
-    //lightapplylight(light, world);
-    
     seg = worldgetsegmentat(world, x, z);
     listpushback(seg->lights, light);
 
@@ -1125,6 +1175,7 @@ worldremovelight(World *world, uint x, uint y, uint z)
                 (uint)light->y == y &&
                 (uint)light->z == z) {
             lightremovelight(light, world);
+            listremove(seg->lights, i);
             lightdelete(light);
         }
     }
@@ -1138,7 +1189,7 @@ segmentrelight(World *world, Segment *seg)
 
     for (i = 0; i < seg->lights->size; i++) {
         light = listat(seg->lights, i);
-
+        lightremovelight(light, world);
         lightcalclightmap(light, world);
         lightapplylight(light, world);
     }

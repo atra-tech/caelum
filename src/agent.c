@@ -176,21 +176,10 @@ agentshutdown(void)
 void
 playerhandle(Event *e)
 {
-/*    float speed = 10.0;
-    glm_vec3_zero(player->vel);
-
-    if (keystate(KEYCODE(w))) {
-        player->vel[0] = speed;
+    //TODO: Send event data to inventory/GUI system.
+    if (e->type == SDL_MOUSEWHEEL) {
+        
     }
-    if (keystate(KEYCODE(s))) {
-        player->vel[0] = -speed;
-    }
-    if (keystate(KEYCODE(d))) {
-        player->vel[2] = speed;
-    }
-    if (keystate(KEYCODE(a))) {
-        player->vel[2] = -speed;
-    }*/
 }
 
 void
@@ -239,9 +228,6 @@ playerupdate(World *world, float dt)
     agentworldcollide(player, world);
     agentcalccolor(player, world);
 
-    /*logprint(LOG_INFO, "Player pos: x:$f, y:$f, z:$f",
-            player->ent.x, player->ent.y, player->ent.z);*/
-
     playercam->ent.x = player->ent.x - 6;
     playercam->ent.y = player->ent.y + 16;
     playercam->ent.z = player->ent.z;
@@ -285,7 +271,7 @@ playermesh(void)
     vec2 uv;
     vec3 norm;
     ivec3 index;
-    TileData *data = tilegetdata("res/tile/maint_floor.abf");
+    TileData *data = tilegetdata("maint_floor");
 
     indexcount = player->vbo.indxcount / 3;
 
@@ -376,15 +362,12 @@ agentworldcollide(Agent *agent, World *world)
 {
     int i, j;
     uint nx, ny, nz;
-    float dx, dz;
     Tile *tile;
     AABB2 box;
 
     nx = agent->ent.x;
     ny = agent->ent.y + 0.5;
     nz = agent->ent.z;
-    dx = agent->ent.x - nx;
-    dz = agent->ent.z - nz;
 
     tile = worldgettoptileat(world, nx, ny, nz);
 

@@ -80,8 +80,12 @@ windoweventhandle(Window *win, Event *e, Camera *cam)
 void
 windowsetvsync(Window *win, int vsync)
 {
-    /* Set windows vsync to vsync */
-    /* Reset GL stuff to change vsync setting */
+    if (SDL_GL_SetSwapInterval(vsync) < 0) {
+        logprint(LOG_INFO, "window: Unable to change vsync state: " \
+                "SDL error: $s", SDL_GetError());
+    } else {
+        win->vsync = vsync;
+    }
 }
 
 void

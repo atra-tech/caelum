@@ -21,13 +21,13 @@
 #define LAYER_TILECOUNT SEGMENT_SIZE * SEGMENT_SIZE
 #define SEGMENT_COUNT   WORLD_SIZE / SEGMENT_SIZE
 
-typedef struct LightColor LightColor;
+struct LightColor;
 
 typedef struct Layer {
     uint pos;
     Tile *toptiles;
     Tile *subtiles;
-    LightColor *light;
+    struct LightColor *light;
     //double *pressures;
     //double *temps;
     //List *gases; List of gases {type: uint, amount: double}
@@ -59,7 +59,7 @@ void worlddelete(World *world);
 
 Segment *worldgetsegmentat(World *world, uint x, uint z);
 Layer *worldgetlayerat(World *world, uint x, uint y, uint z);
-LightColor *worldgetlightcellat(World *world, uint x, uint y, uint z);
+struct LightColor *worldgetlightcellat(World *world, uint x, uint y, uint z);
 Tile *worldgettoptileat(World *world, uint x, uint y, uint z);
 Tile *worldgetsubtileat(World *world, uint x, uint y, uint z);
 Tile *segmentgettoptile(Segment *seg, uint x, uint y, uint z);

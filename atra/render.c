@@ -228,6 +228,12 @@ vbufdelete(VBuffer *buf)
     listdelete(buf->norms);
     listdelete(buf->indxs);
 
+    buf->buffers = NULL;
+    buf->verts = NULL;
+    buf->uvs = NULL;
+    buf->norms = NULL;
+    buf->indxs = NULL;
+
     buf->vao = 0;
     buf->vbocount = 0;
     buf->indxcount = 0;
@@ -543,6 +549,7 @@ texfind(Texture *tex, const char *path)
     if (!name) {
         name = (char *)path;
     }
+    name++;
     texentry = htableget(textures, name);
 
     if (texentry) {
@@ -551,7 +558,7 @@ texfind(Texture *tex, const char *path)
     }
     len = strlen(name);
     texentry = malloc(sizeof(Texture));
-    texname = malloc(sizeof(char) * len);
+    texname = calloc(len + 1, sizeof(char));
     memcpy(texname, name, len);
     texload(texentry, path);
     htableadd(textures, texname, texentry);
@@ -616,7 +623,9 @@ texsetsampleruniform(uint program, const char *name, uint texunit)
 void
 texquit(void)
 {
+    htabledealloc(textures);
     htabledelete(textures);
+    textures = NULL;
 }
 
 void
@@ -684,9 +693,10 @@ fontfind(FontTex *font, const char *path, int width, int height)
     char *fontname;
     FontTex *fontentry;
 
-    if (!name)
+    if (!name) {
         name = (char *)path;
-
+    }
+    name++;
     fontentry = htableget(fonts, name);
     
     if (fontentry) {

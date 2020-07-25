@@ -14,7 +14,7 @@
 #include <cglm/cglm.h>
 #include "util/util.h"
 
-typedef struct World World;
+struct World;
 
 typedef struct LightColor {
     float r, g, b;
@@ -29,9 +29,9 @@ typedef struct Light {
 
 Light * lightcreate(float x, float y, float z, uint radius);
 void lightsetcolor(Light *light, float r, float g, float b);
-void lightcalclightmap(Light *light, World *world);
-void lightapplylight(Light *light, World *world);
-void lightremovelight(Light *light, World *world);
+void lightcalclightmap(Light *light, struct World *world);
+void lightapplylight(Light *light, struct World *world);
+void lightremovelight(Light *light, struct World *world);
 void lightdelete(Light *light);
 
 #endif /* CAELUM_LIGHT_H */

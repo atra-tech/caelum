@@ -4,6 +4,7 @@
  *  Copyright Robert Saarloos, All rights reserved.
  *
  *  Description:
+ *  Cross-platform thread pool system using SDL threads.
  *  Defines types and functions for easily creating and
  *  managing a flexible thread worker pool.
  *
@@ -19,7 +20,7 @@ typedef struct TPool TPool;
 
 typedef void (*ThreadFunc)(void *arg);
 
-TPool *tpoolcreate(uint count);
+TPool *tpoolcreate(uint tcount);
 void tpooldelete(TPool *pool);
 
 int tpooladdjob(TPool *pool, ThreadFunc func, void *arg);

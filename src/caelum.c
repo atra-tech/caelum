@@ -36,6 +36,7 @@ main(int argc, char **argv)
 
         SDL_GL_SwapWindow(window->wndw);
     }
+    mainstatestop();
     stopatraengine();
 
     return 0;

@@ -85,7 +85,7 @@ lightapplylight(Light *light, World *world)
     int i, j, x, y, z; 
     int imin, jmin, xmin, zmin, xmax, zmax, imax, jmax;
     int lightmap_size = light->radius * 2 + 1;
-    uint zidx, iidx;
+    uint iidx;
     LightColor *lightcell;
     LightColor *cell;
     
@@ -117,7 +117,6 @@ lightapplylight(Light *light, World *world)
     }
 
     for (i = imin, z = zmin; i < imax; i++, z++) {
-        zidx = z * lightmap_size;
         iidx = i * lightmap_size;
         for (j = jmin, x = xmin; j < jmax; j++, x++) {
             lightcell = worldgetlightcellat(world, x, y, z);
@@ -136,7 +135,7 @@ lightremovelight(Light *light, World *world)
     int i, j, x, y, z; 
     int imin, jmin, xmin, zmin, xmax, zmax, imax, jmax;
     int lightmap_size = light->radius * 2 + 1;
-    uint zidx, iidx;
+    uint iidx;
     LightColor *lightcell;
     LightColor *cell;
     
@@ -168,7 +167,6 @@ lightremovelight(Light *light, World *world)
     }
 
     for (i = imin, z = zmin; i < imax; i++, z++) {
-        zidx = z * lightmap_size;
         iidx = i * lightmap_size;
         for (j = jmin, x = xmin; j < jmax; j++, x++) {
             lightcell = worldgetlightcellat(world, x, y, z);

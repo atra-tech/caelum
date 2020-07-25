@@ -8,13 +8,11 @@
  *
  *  */
 
-#ifndef HTABLE_H
-#define HTABLE_H
+#ifndef ATRA_HTABLE_H
+#define ATRA_HTABLE_H
 
 #include "list.h"
 #include "util.h"
-
-#define HASH_PRIME_SIZE 32
 
 typedef struct {
     uint size, occupied;
@@ -38,4 +36,4 @@ void htabledelete(HTable *);
 uint htablestringhash(const void *);
 uint htablestringequal(const void *, const void *);
 
-#endif
+#endif /* ATRA_HTABLE_H */

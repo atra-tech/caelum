@@ -168,7 +168,7 @@ utf8toascii(char *str)
 char *
 utf8tounicode(uchar chr)
 {
-    char *str = calloc(2, sizeof(char));
+    uchar *str = calloc(2, sizeof(uchar));
 
     if (chr < 0x80) {
         str[0] = chr;
@@ -180,7 +180,7 @@ utf8tounicode(uchar chr)
         str[1] = chr + 0x20;
     }
 
-    return str;
+    return (char *)str;
 }
 
 char *
@@ -192,7 +192,7 @@ utf8toasciistr(char *str, uint length)
     for (i = 0, index = 0; i < length; i++, index++) {
         result[i] = utf8toascii(str + index);
 
-        if (result[i] >= (char)0x80) {
+        if ((uchar)result[i] >= 0x80) {
             index++;
         }
     }
