@@ -142,6 +142,12 @@ listclear(List *list)
 }
 
 void
+listclearnoresize(List *list)
+{
+    list->size = 0;
+}
+
+void
 listremove(List *list, uint index)
 {
     uint i;

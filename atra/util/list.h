@@ -28,6 +28,7 @@ void listinsert(List *list, void *elem, uint index);
 void liatpopback(List *list);
 void *listback(List *list);
 void listclear(List *list);
+void listclearnoresize(List *list);
 void listremove(List *list, uint index);
 void listremoverange(List *list, uint start, uint end);
 void listfreemove(List *list, uint index);

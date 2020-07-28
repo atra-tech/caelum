@@ -225,7 +225,6 @@ spacebackgroundinit(void)
             "res/shader/spacefrag.glsl");
     texfind(&space_bg.texture, "res/texture/space_bg.png");
     vbufinit(&space_bg.vbo);
-    vbufclear(&space_bg.vbo);
 
     vert[0] = 0.0f;
     vert[1] = -64.0f;
@@ -1050,11 +1049,10 @@ worldrender(World *world, Camera *cam)
 
     for (idx = 0; idx < seglist->size; idx++) {
         seg = listat(seglist, idx);
-
         if (seg->relight || seg->dirty) {
             vbufreset(&seg->vbo);
             listdealloc(seg->vertlights);
-            listclear(seg->vertlights);
+            listclearnoresize(seg->vertlights);
         }
     }
 
@@ -1098,7 +1096,6 @@ worldrender(World *world, Camera *cam)
         shaderloadmodelmat(&worldshader, seg->modelmat);
         glDrawElements(GL_TRIANGLES, seg->vbo.indxcount,
                 GL_UNSIGNED_INT, NULL);
-
     }
     shaderunbind();
     selectionrender(cam);
@@ -1271,7 +1268,7 @@ segmentrelight(World *world, Segment *seg)
 void
 lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner)
-{
+{/*
     uint i;
     LightColor *color_adj[3];
 
@@ -1310,14 +1307,79 @@ lightinterpolate(World *world, uint x, uint y, uint z,
     }
 
     for (i = 0; i < 3; i++) {
-        color[0] += color_adj[i]->r;
-        color[1] += color_adj[i]->g;
-        color[2] += color_adj[i]->b;
+        glm_vec3_add(color, (float *)color_adj[i], color);
     }
 
     color[0] *= 0.25;
     color[1] *= 0.25;
-    color[2] *= 0.25;
+    color[2] *= 0.25;   */ 
+    
+    uint i, count;
+    Tile *tile_adj[3];
+    LightColor *color_adj[3];
+
+    if (x < 1) {
+        x = 1;
+    } else if (x >= WORLD_SIZE - 1) {
+        x = WORLD_SIZE - 2;
+    }
+
+    if (z < 1) {
+        z = 1;
+    } else if (z >= WORLD_SIZE - 1) {
+        z = WORLD_SIZE - 2;
+    }
+
+    switch (corner) {
+    case TILE_BR:
+        tile_adj[0] = worldgettoptileat(world, x + 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x + 1, y, z - 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z - 1);
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
+        break;
+    case TILE_BL:
+        tile_adj[0] = worldgettoptileat(world, x - 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x - 1, y, z - 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z - 1);
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
+        break;
+    case TILE_TL:
+        tile_adj[0] = worldgettoptileat(world, x - 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x - 1, y, z + 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z + 1);
+        color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
+        break;
+    case TILE_TR:
+        tile_adj[0] = worldgettoptileat(world, x + 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x + 1, y, z + 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z + 1);
+        color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
+        color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
+        color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
+    }
+
+    count = 0;
+
+    for (i = 0; i < 3; i++) {
+        if (tile_adj[i]->data && tile_adj[i]->data->attr & TILE_WALL) {
+            continue;
+        }
+        color[0] += color_adj[i]->r;
+        color[1] += color_adj[i]->g;
+        color[2] += color_adj[i]->b;
+        count++;
+    }
+
+    color[0] /= count + 1; //0.225;
+    color[1] /= count + 1; //0.225;
+    color[2] /= count + 1; //0.225;
+
 }
 
 void
@@ -1404,7 +1466,6 @@ lightwallsideinterpolate(World *world, uint x, uint y, uint z,
         color[2] += color_adj[1]->b * mult;
         count--;
     }
-
     color[0] += color_adj[0]->r * mult;
     color[1] += color_adj[0]->g * mult;
     color[2] += color_adj[0]->b * mult;
@@ -1420,7 +1481,8 @@ void
 lightwalltopinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner)
 {
-    uint i;
+    uint i, count;
+    Tile *tile_adj[3];
     LightColor *color_adj[3];
 
     if (x < 1) {
@@ -1437,35 +1499,53 @@ lightwalltopinterpolate(World *world, uint x, uint y, uint z,
 
     switch (corner) {
     case TILE_BR:
+        tile_adj[0] = worldgettoptileat(world, x + 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x + 1, y, z - 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z - 1);
         color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
         color_adj[1] = worldgetlightcellat(world, x + 1, y, z - 1);
         color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
         break;
     case TILE_BL:
+        tile_adj[0] = worldgettoptileat(world, x - 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x - 1, y, z - 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z - 1);
         color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
         color_adj[1] = worldgetlightcellat(world, x - 1, y, z - 1);
         color_adj[2] = worldgetlightcellat(world, x + 0, y, z - 1);
         break;
     case TILE_TL:
+        tile_adj[0] = worldgettoptileat(world, x - 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x - 1, y, z + 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z + 1);
         color_adj[0] = worldgetlightcellat(world, x - 1, y, z + 0);
         color_adj[1] = worldgetlightcellat(world, x - 1, y, z + 1);
         color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
         break;
     case TILE_TR:
+        tile_adj[0] = worldgettoptileat(world, x + 1, y, z + 0);
+        tile_adj[1] = worldgettoptileat(world, x + 1, y, z + 1);
+        tile_adj[2] = worldgettoptileat(world, x + 0, y, z + 1);
         color_adj[0] = worldgetlightcellat(world, x + 1, y, z + 0);
         color_adj[1] = worldgetlightcellat(world, x + 1, y, z + 1);
         color_adj[2] = worldgetlightcellat(world, x + 0, y, z + 1);
     }
 
+    count = 0;
+
     for (i = 0; i < 3; i++) {
+        if (tile_adj[i]->data && tile_adj[i]->data->attr & TILE_WALL) {
+            continue;
+        }
         color[0] += color_adj[i]->r;
         color[1] += color_adj[i]->g;
         color[2] += color_adj[i]->b;
+        count++;
     }
 
-    color[0] *= 0.225;
-    color[1] *= 0.225;
-    color[2] *= 0.225;
+    color[0] /= count + 1; //0.225;
+    color[1] /= count + 1; //0.225;
+    color[2] /= count + 1; //0.225;
 }
 
 void

@@ -9,7 +9,7 @@
  *  */
 
 #include <SDL2/SDL_image.h>
-#include <SDL2/SDL_ttf.h>
+//#include <SDL2/SDL_ttf.h>
 #include <string.h>
 
 #include "render.h"
@@ -41,17 +41,16 @@ vbufinit(VBuffer *buf)
 void
 vbufaddvertex(VBuffer *buf, vec3 vertex, vec2 uv, vec3 normal)
 {
-    float *v = malloc(3 * sizeof(float));
-    float *u = malloc(2 * sizeof(float));
-    float *n = malloc(3 * sizeof(float));
-/*
-    memcpy(v, &vertex, 3 * sizeof(float));
-    memcpy(u, &uv, 2 * sizeof(float));
-    memcpy(n, &normal, 3 * sizeof(float));
-*/
-    v[0] = vertex[0]; v[1] = vertex[1]; v[2] = vertex[2];
-    u[0] = uv[0]; u[1] = uv[1];
-    n[0] = normal[0]; n[1] = normal[1]; n[2] = normal[2];
+    float *data = malloc(8 * sizeof(float));
+    float *v, *u, *n;
+
+    v = data + 0;
+    u = data + 3;
+    n = data + 5;
+
+    memcpy(v, vertex, 3 * sizeof(float));
+    memcpy(u, uv, 2 * sizeof(float));
+    memcpy(n, normal, 3 * sizeof(float));
 
     listpushback(buf->verts, v);
     listpushback(buf->uvs, u);
@@ -61,9 +60,9 @@ vbufaddvertex(VBuffer *buf, vec3 vertex, vec2 uv, vec3 normal)
 void
 vbufaddindex(VBuffer *buf, ivec3 index)
 {
-    int *i = (int *)malloc(3 * sizeof(int));
+    int *i = malloc(3 * sizeof(int));
 
-    i[0] = index[0]; i[1] = index[1]; i[2] = index[2];
+    memcpy(i, index, 3 * sizeof(int));
 
     listpushback(buf->indxs, i);
 }
@@ -75,30 +74,8 @@ vbufbindvbo(VBuffer *buf, int dimens, List *data)
     GLuint *vbo = malloc(sizeof(GLuint));
     float *vec = malloc(data->size * dimens * sizeof(float));
 
-    if (dimens == 2) {
-        for (i = 0, j = 0; i < data->size * 2; i += 2, j++) {
-            vec[i] = ((float *)data->elem[j])[0];
-            vec[i+1] = ((float *)data->elem[j])[1];
-        }
-    } else if (dimens == 3) {
-        for (i = 0, j = 0; i < data->size * 3; i += 3, j++) {
-            vec[i] = ((float *)data->elem[j])[0];
-            vec[i+1] = ((float *)data->elem[j])[1];
-            vec[i+2] = ((float *)data->elem[j])[2];
-        }
-    } else if (dimens == 4) {
-        for (i = 0, j = 0; i < data->size * 4; i += 4, j++) {
-            vec[i] = ((float *)data->elem[j])[0];
-            vec[i+1] = ((float *)data->elem[j])[1];
-            vec[i+2] = ((float *)data->elem[j])[2];
-            vec[i+3] = ((float *)data->elem[j])[3];
-        }
-    }
-
-    if (checkmalloc(vbo) < 0) {
-        logprint(LOG_ERROR, "buffer: Unable to bind VBO: " \
-                            "Memory error");
-        return;
+    for (i = 0, j = 0; i < data->size * dimens; i += dimens, j++) {
+        memcpy(vec + i, data->elem[j], sizeof(float) * dimens);
     }
 
     glGenBuffers(1, vbo);
@@ -107,12 +84,7 @@ vbufbindvbo(VBuffer *buf, int dimens, List *data)
                  data->size * sizeof(float) * dimens,
                  vec,
                  GL_STATIC_DRAW);
-    glVertexAttribPointer(buf->vbocount,
-                          dimens,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          0,
-                          (GLvoid*)0);
+    glVertexAttribPointer(buf->vbocount, dimens, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(buf->vbocount++);
     listpushback(buf->buffers, vbo);
     free(vec);
@@ -126,9 +98,7 @@ vbufbindebo(VBuffer *buf)
     int *vec = malloc(buf->indxs->size * 3 * sizeof(int));
 
     for (i = 0, j = 0; i < buf->indxs->size * 3; i += 3, j++) {
-        vec[i+0] = ((int *)buf->indxs->elem[j])[0];
-        vec[i+1] = ((int *)buf->indxs->elem[j])[1];
-        vec[i+2] = ((int *)buf->indxs->elem[j])[2];
+        memcpy(vec + i, buf->indxs->elem[j], sizeof(float) * 3);
     }
 
     if (checkmalloc(ebo) < 0) {
@@ -140,9 +110,8 @@ vbufbindebo(VBuffer *buf)
     glGenBuffers(1, ebo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, *ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 buf->indxs->size * sizeof(int) * 3,
-                 vec,
-                 GL_STATIC_DRAW);
+            buf->indxs->size * sizeof(int) * 3,
+            vec, GL_STATIC_DRAW);
     listpushback(buf->buffers, ebo);
     free(vec);
 }
@@ -171,13 +140,12 @@ void
 vbufclear(VBuffer *buf)
 {
     listdealloc(buf->verts);
-    listdealloc(buf->uvs);
-    listdealloc(buf->norms);
     listdealloc(buf->indxs);
-    listclear(buf->verts);
-    listclear(buf->uvs);
-    listclear(buf->norms);
-    listclear(buf->indxs);
+    listclearnoresize(buf->verts);
+    listclearnoresize(buf->uvs);
+    listclearnoresize(buf->norms);
+    listclearnoresize(buf->indxs);
+
     buf->indxcount = 0;
 }
 
@@ -193,14 +161,12 @@ vbufreset(VBuffer *buf)
  
     listdealloc(buf->buffers);
     listdealloc(buf->verts);
-    listdealloc(buf->uvs);
-    listdealloc(buf->norms);
     listdealloc(buf->indxs);
-    listclear(buf->buffers);
-    listclear(buf->verts);
-    listclear(buf->uvs);
-    listclear(buf->norms);
-    listclear(buf->indxs);
+    listclearnoresize(buf->buffers);
+    listclearnoresize(buf->verts);
+    listclearnoresize(buf->uvs);
+    listclearnoresize(buf->norms);
+    listclearnoresize(buf->indxs);
 
     buf->vao = 0;
     buf->vbocount = 0;
@@ -219,8 +185,8 @@ vbufdelete(VBuffer *buf)
 
     listdealloc(buf->buffers);
     listdealloc(buf->verts);
-    listdealloc(buf->uvs);
-    listdealloc(buf->norms);
+    //listdealloc(buf->uvs);
+    //listdealloc(buf->norms);
     listdealloc(buf->indxs);
     listdelete(buf->buffers);
     listdelete(buf->verts);

@@ -8,6 +8,8 @@
 *
 * */
 
+#include <xmmintrin.h>
+
 #include "light.h"
 #include "world.h"
 #include "util/log.h"
@@ -74,109 +76,7 @@ lightcalclightmap(Light *light, World *world)
     x = light->radius;
     y = light->radius;
     cell = &light->lightmap[y + x * (light->radius * 2 + 1)];
-    cell->r = light->color.r;
-    cell->g = light->color.g;
-    cell->b = light->color.b;
-}
-
-void
-lightapplylight(Light *light, World *world)
-{
-    int i, j, x, y, z; 
-    int imin, jmin, xmin, zmin, xmax, zmax, imax, jmax;
-    int lightmap_size = light->radius * 2 + 1;
-    uint iidx;
-    LightColor *lightcell;
-    LightColor *cell;
-    
-    y = light->y;
-    imin = 0;
-    jmin = 0;
-    xmin = light->x - light->radius;
-    zmin = light->z - light->radius;
-    xmax = light->x + light->radius;
-    zmax = light->z + light->radius;
-    imax = lightmap_size;
-    jmax = lightmap_size;
-
-    if (xmin < 0) {
-        jmin = 0 - xmin;
-        xmin = 0;
-    }
-    if (zmin < 0) {
-        imin = 0 - zmin;
-        zmin = 0;
-    }
-    if (xmax >= WORLD_SIZE) {
-        jmax = lightmap_size - (xmax - (WORLD_SIZE - 1)); 
-        xmax = WORLD_SIZE - 1;
-    }
-    if (zmax >= WORLD_SIZE) {
-        imax = lightmap_size - (zmax - (WORLD_SIZE - 1)); 
-        zmax = WORLD_SIZE - 1;
-    }
-
-    for (i = imin, z = zmin; i < imax; i++, z++) {
-        iidx = i * lightmap_size;
-        for (j = jmin, x = xmin; j < jmax; j++, x++) {
-            lightcell = worldgetlightcellat(world, x, y, z);
-            cell = &light->lightmap[j + iidx];
-
-            lightcell->r += cell->r;
-            lightcell->g += cell->g;
-            lightcell->b += cell->b;
-        }
-    }
-}
-
-void
-lightremovelight(Light *light, World *world)
-{
-    int i, j, x, y, z; 
-    int imin, jmin, xmin, zmin, xmax, zmax, imax, jmax;
-    int lightmap_size = light->radius * 2 + 1;
-    uint iidx;
-    LightColor *lightcell;
-    LightColor *cell;
-    
-    y = light->y;
-    imin = 0;
-    jmin = 0;
-    xmin = light->x - light->radius;
-    zmin = light->z - light->radius;
-    xmax = light->x + light->radius;
-    zmax = light->z + light->radius;
-    imax = lightmap_size;
-    jmax = lightmap_size;
-
-    if (xmin < 0) {
-        jmin = 0 - xmin;
-        xmin = 0;
-    }
-    if (zmin < 0) {
-        imin = 0 - zmin;
-        zmin = 0;
-    }
-    if (xmax >= WORLD_SIZE) {
-        jmax = lightmap_size - (xmax - (WORLD_SIZE - 1)); 
-        xmax = WORLD_SIZE - 1;
-    }
-    if (zmax >= WORLD_SIZE) {
-        imax = lightmap_size - (zmax - (WORLD_SIZE - 1)); 
-        zmax = WORLD_SIZE - 1;
-    }
-
-    for (i = imin, z = zmin; i < imax; i++, z++) {
-        iidx = i * lightmap_size;
-        for (j = jmin, x = xmin; j < jmax; j++, x++) {
-            lightcell = worldgetlightcellat(world, x, y, z);
-            cell = &light->lightmap[j + iidx];
-
-            lightcell->r -= cell->r;
-            lightcell->g -= cell->g;
-            lightcell->b -= cell->b;
-        }
-    }
+    memcpy(cell, &light->color, sizeof(LightColor));
 }
 
 int
@@ -207,7 +107,7 @@ lightapplytilelight(Light *light, Layer *layer,
         uint x, uint z, uint wx, uint wz)
 {
     uint map_x, map_z, mapsize;
-    LightColor *dest, *src;
+    float *dest, *src;
 
     if (!lightinradius(light->x, light->z, wx, wz, light->radius)) {
         return;
@@ -216,12 +116,13 @@ lightapplytilelight(Light *light, Layer *layer,
     map_x = wx - (light->x - light->radius);
     map_z = wz - (light->z - light->radius);
 
-    src = &light->lightmap[map_z + map_x * mapsize];
-    dest = &layer->light[z + x * SEGMENT_SIZE];
+    src = (float *)&light->lightmap[map_z + map_x * mapsize];
+    dest = (float *)&layer->light[z + x * SEGMENT_SIZE];
 
-    dest->r += src->r;
+    glm_vec3_add(dest, src, dest);
+    /*dest->r += src->r;
     dest->g += src->g;
-    dest->b += src->b;
+    dest->b += src->b;*/
 }
 
 void
@@ -252,6 +153,12 @@ lightapplytosegment(List *lights, Segment *seg)
 }
 
 void
+lightlayercalcmap(struct World *world, struct Layer *layer)
+{
+    uint x, z;
+}
+
+void
 castlight(Light *light, World *world, uint row, float startslope,
         float endslope, uint xx, uint xy, uint yx, uint yy)
 {
@@ -272,7 +179,7 @@ castlight(Light *light, World *world, uint row, float startslope,
             lslope = (dx - 0.5) / (dy + 0.5);
             rslope = (dx + 0.5) / (dy - 0.5);
 
-            if (startslope < rslope) {
+            if (startslope <= rslope) {
                 continue;
             } else if (endslope > lslope) {
                 break;
@@ -337,8 +244,9 @@ illuminate(Light *light, uint x, uint y, uint r2, uint dist2, float mult)
     uint lx = x - (light->x - light->radius);
     uint ly = y - (light->z - light->radius);
     LightColor *cell = &light->lightmap[ly + lx * (light->radius * 2 + 1)];
-
+    
     intensity *= mult;
+
     cell->r = light->color.r * intensity;
     cell->g = light->color.g * intensity;
     cell->b = light->color.b * intensity;

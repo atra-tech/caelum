@@ -71,7 +71,7 @@ cameracalcviewmatrix(Camera *cam)
 void
 cameracalcprojviewmatrix(Camera *cam)
 {
-    glm_mat4_mul(cam->projmat, cam->viewmat, cam->projviewmat);
+    glm_mat4_mul_sse2(cam->projmat, cam->viewmat, cam->projviewmat);
 }
 
 void

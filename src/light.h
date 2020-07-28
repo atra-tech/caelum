@@ -17,6 +17,7 @@
 
 struct World;
 struct Segment;
+struct Layer;
 
 typedef struct LightColor {
     float r, g, b;
@@ -33,10 +34,9 @@ Light * lightcreate(float x, float y, float z, uint radius);
 void lightsetcolor(Light *light, float r, float g, float b);
 void lightcalclightmap(Light *light, struct World *world);
 void lightclearlightmap(Light *light);
-void lightapplylight(Light *light, struct World *world);
-void lightremovelight(Light *light, struct World *world);
 void lightapplytosegment(List *lights, struct Segment *seg);
 void lightclearsegment(struct Segment *seg);
+void lightlayercalcmap(struct World *, struct Layer *);
 void lightdelete(Light *light);
 
 #endif /* CAELUM_LIGHT_H */

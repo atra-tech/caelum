@@ -28,6 +28,7 @@ typedef struct Layer {
     Tile *toptiles;
     Tile *subtiles;
     struct LightColor *light;
+    struct LightColor *lightmap;
     //double *pressures;
     //double *temps;
     //List *gases; List of gases {type: uint, amount: double}
