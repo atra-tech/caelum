@@ -64,10 +64,13 @@ Tile *worldgettoptileat(World *world, uint x, uint y, uint z);
 Tile *worldgetsubtileat(World *world, uint x, uint y, uint z);
 Tile *segmentgettoptile(Segment *seg, uint x, uint y, uint z);
 Tile *segmentgetsubtile(Segment *seg, uint x, uint y, uint z);
+List *segmentgetadjlights(World *world, Segment *seg);
 
 void worldaddlight(World *world, uint x, uint y, uint z,
         float r, float g, float b, uint radius);
 void worldremovelight(World *world, uint x, uint y, uint z);
 void segmentrelight(World *world, Segment *seg);
+void segmentcalclights(World *world, Segment *seg);
+
 
 #endif /* CAELUM_WORLD_H */

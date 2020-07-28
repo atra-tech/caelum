@@ -24,12 +24,17 @@ static void illuminate(Light *light, uint x, uint y, uint r2, uint dist2,
         float mult);
 static void castlight(Light *light, World *world, uint row, float startslope,
         float endslope, uint xx, uint xy, uint yx, uint yy);
+static void lightapplytilelight(Light *light, Layer *layer,
+        uint x, uint z, uint wx, uint wz);
 
 Light *
 lightcreate(float x, float y, float z, uint radius)
 {
     Light *light = malloc(sizeof(Light));
-    uint mapsize = (radius * 2 + 1) * (radius * 2 + 1);
+    uint mapsize;
+    
+    mapsize = radius * 2 + 1;
+    mapsize *= mapsize;
 
     light->x = x;
     light->y = y;
@@ -57,14 +62,10 @@ lightcalclightmap(Light *light, World *world)
     uint i, x, y, mapsize;
     LightColor *cell;
 
-    mapsize = (light->radius * 2 + 1) * (light->radius * 2 + 1);
+    mapsize = light->radius * 2 + 1;
+    mapsize *= mapsize;
 
-    for (i = 0; i < mapsize; i++) {
-        cell = &light->lightmap[i];
-        cell->r = 0.0f;
-        cell->g = 0.0f;
-        cell->b = 0.0f;
-    }
+    memset(light->lightmap, 0, mapsize * sizeof(LightColor));
 
     for (i = 0; i < 8; i++) {
         castlight(light, world, 1, 1.0, 0.0, mults[0][i], mults[1][i],
@@ -72,11 +73,10 @@ lightcalclightmap(Light *light, World *world)
     }
     x = light->radius;
     y = light->radius;
-    cell = &light->lightmap[x + y * (light->radius * 2 + 1)];
+    cell = &light->lightmap[y + x * (light->radius * 2 + 1)];
     cell->r = light->color.r;
     cell->g = light->color.g;
     cell->b = light->color.b;
-
 }
 
 void
@@ -179,6 +179,78 @@ lightremovelight(Light *light, World *world)
     }
 }
 
+int
+lightinradius(int lx, int lz, int x, int z, int radius)
+{
+    int dx, dz;
+
+    dx = lx - x;
+    dz = lz - z;
+
+    return dx * dx + dz * dz < radius * radius;
+}
+
+void
+lightclearsegment(Segment *seg)
+{
+    uint y;
+    Layer *layer;
+
+    for (y = 0; y < WORLD_HEIGHT; y++) {
+        layer = &seg->layers[y];
+        memset(layer->light, 0, LAYER_TILECOUNT * sizeof(LightColor));
+    }
+}
+
+void
+lightapplytilelight(Light *light, Layer *layer,
+        uint x, uint z, uint wx, uint wz)
+{
+    uint map_x, map_z, mapsize;
+    LightColor *dest, *src;
+
+    if (!lightinradius(light->x, light->z, wx, wz, light->radius)) {
+        return;
+    }
+    mapsize = light->radius * 2 + 1;
+    map_x = wx - (light->x - light->radius);
+    map_z = wz - (light->z - light->radius);
+
+    src = &light->lightmap[map_z + map_x * mapsize];
+    dest = &layer->light[z + x * SEGMENT_SIZE];
+
+    dest->r += src->r;
+    dest->g += src->g;
+    dest->b += src->b;
+}
+
+void
+lightapplytosegment(List *lights, Segment *seg)
+{
+    const uint x_offset = seg->x * SEGMENT_SIZE;
+    const uint z_offset = seg->z * SEGMENT_SIZE;
+    uint seg_x, seg_z, tile_x, tile_z, l_idx, y;
+    Layer *layer;
+    Light *light;
+
+    for (y = 0; y < WORLD_HEIGHT; y++) {
+        layer = &seg->layers[y];
+
+        for (seg_x = 0; seg_x < SEGMENT_SIZE; seg_x++) {
+            for (seg_z = 0; seg_z < SEGMENT_SIZE; seg_z++) {
+                tile_x = seg_x + x_offset;
+                tile_z = seg_z + z_offset;
+                
+                for (l_idx = 0; l_idx < lights->size; l_idx++) {
+                    light = listat(lights, l_idx);
+                    lightapplytilelight(light, layer,
+                            seg_x, seg_z, tile_x, tile_z);
+                }
+            }
+        }
+    }
+}
+
 void
 castlight(Light *light, World *world, uint row, float startslope,
         float endslope, uint xx, uint xy, uint yx, uint yy)
@@ -188,7 +260,7 @@ castlight(Light *light, World *world, uint row, float startslope,
     uint i, ax, ay, radius2, dist2;
     Tile *tile;
 
-    if (startslope < endslope) {
+    if (startslope <= endslope) {
         return;
     }
     startslopenext = startslope;
@@ -264,7 +336,7 @@ illuminate(Light *light, uint x, uint y, uint r2, uint dist2, float mult)
     float intensity = 1.0f - ((float)dist2 / (float)r2);
     uint lx = x - (light->x - light->radius);
     uint ly = y - (light->z - light->radius);
-    LightColor *cell = &light->lightmap[lx + ly * (light->radius * 2 + 1)];
+    LightColor *cell = &light->lightmap[ly + lx * (light->radius * 2 + 1)];
 
     intensity *= mult;
     cell->r = light->color.r * intensity;

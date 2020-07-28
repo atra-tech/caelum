@@ -17,7 +17,6 @@
 #include "input.h"
 #include "core.h"
 #include "thread.h"
-//#include "thpool.h"
 
 static const float wallverts[] =
 {
@@ -165,7 +164,6 @@ static Segment *segmentcreatematrix(uint rows, uint cols);
 static Layer *layercreatearray(uint count);
 static void segmentdeletematrix(Segment *segs, uint rows, uint cols);
 static void layerdeletearray(Layer *layers, uint count);
-//static void layerclearlight(Layer *layer);
 static void lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
 static void lightwallsideinterpolate(World *world, uint x, uint y, uint z,
@@ -341,7 +339,9 @@ selectioninit(void)
 void
 worldshutdown()
 {
+    tiledatabasestop();
     listdelete(tiledata);
+    tiledata = NULL;
 }
 
 World *
@@ -416,7 +416,7 @@ layercreatearray(uint count)
         layers[i].pos = i;
         layers[i].toptiles = calloc(LAYER_TILECOUNT, sizeof(Tile));
         layers[i].subtiles = calloc(LAYER_TILECOUNT, sizeof(Tile));
-        layers[i].light = calloc(LAYER_TILECOUNT, sizeof(vec3));
+        layers[i].light = calloc(LAYER_TILECOUNT, sizeof(LightColor));
     }
 
     return layers;
@@ -507,7 +507,7 @@ worldhandle(World *world, Event *e)
     //  Handle click events or key presses on world objects.
     //  TODO: tile picking algorithm
     int i, j;
-    int mx, my, mbut, tile_x, tile_z, relight;
+    int mx, my, mbut, tile_x, tile_z, relight, dirty;
     vec3 ray;
     float dist;
     Camera *cam;
@@ -517,6 +517,7 @@ worldhandle(World *world, Event *e)
     mbut = mousegetstate(&mx, &my);
     cam = getmaincamera();
     relight = 0;
+    dirty = 0;
 
     mousecalcray(cam, mx, my, ray);
     dist = fabs(cam->ent.y / ray[1]);
@@ -536,7 +537,7 @@ worldhandle(World *world, Event *e)
     if (!tile->data) {
         glm_translate_y(selection.modelmat, -0.17);
     }
-   
+
     //TODO: MAJOR REWORK FOR INVENTORY -> TILE PLACEMENT
     if (e->type == SDL_MOUSEMOTION) {
 
@@ -575,18 +576,20 @@ worldhandle(World *world, Event *e)
             }
         }
         seg = worldgetsegmentat(world, tile_x, tile_z);
-        seg->dirty = 1;
+        dirty = 1;
     } else if (e->type == SDL_MOUSEBUTTONUP) {
 
     }
-    
-    if (relight) {
-        for (i = -1; i <= 1; i++) {
-            for (j = -1; j <= 1; j++) {
-                seg = worldgetsegmentat(world,
-                        tile_x + i * SEGMENT_SIZE,
-                        tile_z + j * SEGMENT_SIZE);
+
+    for (i = -1; i <= 1; i++) {
+        for (j = -1; j <= 1; j++) {
+            seg = worldgetsegmentat(world,
+                    tile_x + i * SEGMENT_SIZE,
+                    tile_z + j * SEGMENT_SIZE);
+            if (relight) {
                 seg->relight = 1;
+            } else if (dirty) {
+                seg->dirty = 1;
             }
         }
     }
@@ -913,6 +916,22 @@ segmentmesh(World *world, Segment *seg)
 }
 
 void
+segmentlightmapjob(void *arg)
+{
+    Segment *seg;
+    World *world;
+    struct SegJobArgs *args;
+    args = arg;
+
+    seg = args->seg;
+    world = args->world;
+
+    segmentcalclights(world, seg);
+
+    free(args);
+}
+
+void
 segmentlightjob(void *arg)
 {
     struct SegJobArgs *args;
@@ -967,14 +986,27 @@ void segmentqueuerelight(World *world, Segment *seg)
     tpooladdjob(workerpool, segmentlightjob, args);
 }
 
+void segmentqueuelightmap(World *world, Segment *seg)
+{
+    struct SegJobArgs *args;
+
+    args = malloc(sizeof(struct SegJobArgs));
+    args->seg = seg;
+    args->world = world;
+    
+    tpooladdjob(workerpool, segmentlightmapjob, args);
+}
+
 void
 worldrender(World *world, Camera *cam)
 {
     Agent *player = agentgetplayer();
     Segment *seg;
-    uint pseg_x, pseg_z;
+    List *seglist;
+    uint pseg_x, pseg_z, idx;
     int i, j, seg_x, seg_z;
 
+    seglist = listcreate();
     pseg_x = player->ent.x / SEGMENT_SIZE;
     pseg_z = player->ent.z / SEGMENT_SIZE;
 
@@ -998,7 +1030,6 @@ worldrender(World *world, Camera *cam)
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
 
-    //TODO: Split surrounding segment checks into single loop with list
     for (i = -2; i <= 2; i++) {
         seg_x = pseg_x + i;
 
@@ -1013,87 +1044,65 @@ worldrender(World *world, Camera *cam)
             if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
                 continue;
             }
-
-            if (seg->relight || seg->dirty) {
-                vbufreset(&seg->vbo);
-                listdealloc(seg->vertlights);
-                listclear(seg->vertlights);
-            }
+            listpushback(seglist, seg);
         }
     }
-    for (i = -2; i <= 2; i++) {
-        seg_x = pseg_x + i;
 
-        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
-            continue;
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+
+        if (seg->relight || seg->dirty) {
+            vbufreset(&seg->vbo);
+            listdealloc(seg->vertlights);
+            listclear(seg->vertlights);
         }
+    }
 
-        for (j = -2; j <= 2; j++) {
-            seg_z = pseg_z + j;
-            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
-            
-            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
-                continue;
-            }
-
-            if (seg->relight) {
-                segmentqueuerelight(world, seg);
-            }
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+        
+        if (seg->relight) {
+            segmentqueuelightmap(world, seg);
         }
     }
     tpoolwait(workerpool);
 
-    for (i = -2; i <= 2; i++) {
-        seg_x = pseg_x + i;
-
-        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
-            continue;
-        }
-
-        for (j = -2; j <= 2; j++) {
-            seg_z = pseg_z + j;
-            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
-            
-            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
-                continue;
-            }
-
-            if (seg->dirty) {
-                segmentqueueremesh(world, seg);
-            }
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+        
+        if (seg->relight) {
+            segmentqueuerelight(world, seg);
         }
     }
     tpoolwait(workerpool);
 
-    for (i = -2; i <= 2; i++) {
-        seg_x = pseg_x + i;
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
 
-        if (seg_x < 0 || seg_x >= SEGMENT_COUNT) {
-            continue;
+        if (seg->dirty) {
+            segmentqueueremesh(world, seg);
+        }
+    }
+    tpoolwait(workerpool);
+
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+        
+        if (seg->dirty) {
+            vbufbind(&seg->vbo);
+            vbufbindvbo(&seg->vbo, 3, seg->vertlights);
+            seg->dirty = 0;
         }
 
-        for (j = -2; j <= 2; j++) {
-            seg_z = pseg_z + j;
-            seg = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
-            
-            if (seg_z < 0 || seg_z >= SEGMENT_COUNT) {
-                continue;
-            }
+        glBindVertexArray(seg->vbo.vao);
+        shaderloadmodelmat(&worldshader, seg->modelmat);
+        glDrawElements(GL_TRIANGLES, seg->vbo.indxcount,
+                GL_UNSIGNED_INT, NULL);
 
-            if (seg->dirty) {
-                vbufbind(&seg->vbo);
-                vbufbindvbo(&seg->vbo, 3, seg->vertlights);
-                seg->dirty = 0;
-            }
-
-            glBindVertexArray(seg->vbo.vao);
-            shaderloadmodelmat(&worldshader, seg->modelmat);
-            glDrawElements(GL_TRIANGLES, seg->vbo.indxcount,
-                    GL_UNSIGNED_INT, NULL);
-        }
     }
     shaderunbind();
     selectionrender(cam);
+    listdelete(seglist);
 }
 
 void
@@ -1162,7 +1171,8 @@ worldaddlight(World *world, uint x, uint y, uint z,
 void
 worldremovelight(World *world, uint x, uint y, uint z)
 {
-    uint i;
+    uint i; 
+    int j, k;
     Segment *seg;
     Light *light;
 
@@ -1174,25 +1184,88 @@ worldremovelight(World *world, uint x, uint y, uint z)
         if ((uint)light->x == x &&
                 (uint)light->y == y &&
                 (uint)light->z == z) {
-            lightremovelight(light, world);
             listremove(seg->lights, i);
             lightdelete(light);
+            seg->relight = 1;
+            
+            for (j = -1; j <= 1; j++) {
+                for (k = -1; k <= 1; k++) {
+                    seg = worldgetsegmentat(world,
+                            x + j * SEGMENT_SIZE,
+                            z + k * SEGMENT_SIZE);
+                    seg->relight = 1;
+                }
+            }
         }
+    }
+}
+
+List *
+segmentgetadjlights(World *world, Segment *seg)
+{
+    uint l, seg_x, seg_z;
+    int x, z;
+    Segment *seg_adj;
+    Light *light;
+    List *result;
+
+    result = listcreate();
+
+    for (x = -1; x <= 1; x++) {
+        for (z = -1; z <= 1; z++) {
+            seg_x = seg->x + x;
+            seg_z = seg->z + z;
+
+            if (seg_x > SEGMENT_COUNT || seg_z > SEGMENT_COUNT) {
+                continue;
+            }
+
+            seg_adj = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
+
+            for (l = 0; l < seg_adj->lights->size; l++) {
+                light = listat(seg_adj->lights, l);
+                listpushback(result, light);
+            }
+        }
+    }
+
+    return result;
+}
+
+void
+segmentcalclights(World *world, Segment *seg)
+{
+    uint i;
+
+    for (i = 0; i < seg->lights->size; i++) {
+        lightcalclightmap(listat(seg->lights, i), world);
     }
 }
 
 void
 segmentrelight(World *world, Segment *seg)
 {
-    uint i;
-    Light *light;
+    List *lightlist;
 
-    for (i = 0; i < seg->lights->size; i++) {
-        light = listat(seg->lights, i);
-        lightremovelight(light, world);
+    lightlist = segmentgetadjlights(world, seg);
+
+    lightclearsegment(seg);
+
+    /*for (uint i = 0; i < lightlist->size; i++) {
+        Light *light = listat(lightlist, i);
         lightcalclightmap(light, world);
-        lightapplylight(light, world);
-    }
+    }*/
+    lightapplytosegment(lightlist, seg);
+
+    listdelete(lightlist);
+    //for (i = 0; i < seg->lights->size; i++) {
+        //light = listat(seg->lights, i);
+        //lightremovelight(light, world);
+        //lightcalclightmap(light, world);
+        //lightapplylight(light, world);
+    //}
+
+
 }
 
 void

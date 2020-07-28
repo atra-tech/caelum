@@ -14,7 +14,16 @@
 #include "render.h"
 #include "physics.h"
 
+#define AGENT_VIEW_RADIUS 15
+#define AGENT_VIEW_AREA (AGENT_VIEW_RADIUS * AGENT_VIEW_RADIUS)
+
 struct World;
+
+enum {
+    SIGHT_VISIBLE,
+    SIGHT_PARTIAL,
+    SIGHT_BLOCKED
+};
 
 typedef struct Agent {
     Entity ent;
@@ -23,6 +32,7 @@ typedef struct Agent {
     VBuffer vbo;
     AABB2 aabb;
     vec3 color;
+    int sightmap[AGENT_VIEW_AREA];
     //Inventory inv
 } Agent;
 

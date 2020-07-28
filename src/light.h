@@ -13,8 +13,10 @@
 
 #include <cglm/cglm.h>
 #include "util/util.h"
+#include "util/list.h"
 
 struct World;
+struct Segment;
 
 typedef struct LightColor {
     float r, g, b;
@@ -30,8 +32,11 @@ typedef struct Light {
 Light * lightcreate(float x, float y, float z, uint radius);
 void lightsetcolor(Light *light, float r, float g, float b);
 void lightcalclightmap(Light *light, struct World *world);
+void lightclearlightmap(Light *light);
 void lightapplylight(Light *light, struct World *world);
 void lightremovelight(Light *light, struct World *world);
+void lightapplytosegment(List *lights, struct Segment *seg);
+void lightclearsegment(struct Segment *seg);
 void lightdelete(Light *light);
 
 #endif /* CAELUM_LIGHT_H */

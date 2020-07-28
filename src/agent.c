@@ -309,7 +309,6 @@ playermesh(void)
         indexcount += 4;
         player->vbo.indxcount += 12;
     }
-
     vbufbind(&player->vbo);
 }
 

@@ -74,10 +74,8 @@ createtestworld(void)
 
     y = 0;
 
-    for (x = 512; x < 512 + SEGMENT_SIZE; x++)
-    {
-        for (z = 512; z < 512 + SEGMENT_SIZE; z++)
-        {
+    for (x = 512; x < 512 + SEGMENT_SIZE; x++) {
+        for (z = 512; z < 512 + SEGMENT_SIZE; z++) {
             if (x == 512 || z == 512 ||
                     x == 512 + SEGMENT_SIZE - 1 ||
                     z == 512 + SEGMENT_SIZE - 1) {
@@ -104,6 +102,11 @@ createtestworld(void)
 
     worldaddlight(world, 515, 0, 516, 0.1, 0.5, 1.0, 10);
     worldaddlight(world, 524, 0, 526, 1.0, 0.5, 0.1, 14);
+    
+    worldaddlight(world, 504, 0, 536, 1.0, 0.8, 0.1, 15);
+    worldaddlight(world, 504, 0, 504, 0.4, 1.0, 0.1, 15);
+    worldaddlight(world, 536, 0, 504, 0.1, 0.8, 1.0, 15);
+    worldaddlight(world, 536, 0, 536, 1.0, 0.1, 0.8, 15);
 }
 
 void
