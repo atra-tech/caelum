@@ -11,6 +11,8 @@
 #ifndef CAELUM_WORLD_H
 #define CAELUM_WORLD_H
 
+#include <time.h>
+
 #include "util/util.h"
 #include "render.h"
 #include "tile.h"
@@ -27,7 +29,6 @@ typedef struct Layer {
     uint pos;
     Tile *toptiles;
     Tile *subtiles;
-    struct LightColor *light;
     struct LightColor *lightmap;
     //double *pressures;
     //double *temps;
@@ -39,8 +40,8 @@ typedef struct Layer {
 typedef struct Segment {
     uint x, z, dirty, relight;
     Layer *layers;
-    VBuffer vbo;
-    List *vertlights; /* VBO light data */
+    FastVBO vbo;
+    VecList vertlights; /* VBO light data */
     mat4 modelmat;
     List *lights; /* Worldspace light entities */
 } Segment;

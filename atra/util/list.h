@@ -21,6 +21,20 @@ typedef struct {
     uint cap;
 } List;
 
+typedef struct {
+    float *data;
+    size_t elemsize;
+    uint size;
+    uint cap;
+} VecList;
+
+typedef struct {
+    int *data;
+    size_t elemsize;
+    uint size;
+    uint cap;
+} IVecList;
+
 List *listcreate();
 void *listat(List *list, uint index);
 void listpushback(List *list, void *elem);
@@ -36,5 +50,19 @@ void listfreemoverange(List *list, uint start, uint end);
 void listmoveelem(List *list, uint index, uint dest);
 void listdealloc(List *list);
 void listdelete(List *list);
+
+void veclistinit(VecList *list, size_t elemsize);
+float * veclistat(VecList *list, uint index);
+void veclistpush(VecList *list, float *vec);
+void veclistgrow(VecList *list);
+void veclistclear(VecList *list);
+void veclistdelete(VecList *list);
+
+void iveclistinit(IVecList *list, size_t elemsize);
+int * iveclistat(IVecList *list, uint index);
+void iveclistpush(IVecList *list, int *vec);
+void iveclistgrow(IVecList *list);
+void iveclistclear(IVecList *list);
+void iveclistdelete(IVecList *list);
 
 #endif /* ATRA_LIST_H */

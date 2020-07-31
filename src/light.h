@@ -14,6 +14,7 @@
 #include <cglm/cglm.h>
 #include "util/util.h"
 #include "util/list.h"
+#include <time.h>
 
 struct World;
 struct Segment;
@@ -36,7 +37,7 @@ void lightcalclightmap(Light *light, struct World *world);
 void lightclearlightmap(Light *light);
 void lightapplytosegment(List *lights, struct Segment *seg);
 void lightclearsegment(struct Segment *seg);
-void lightlayercalcmap(struct World *, struct Layer *);
+void lightsegmentcalcmap(struct World *, struct Segment *);
 void lightdelete(Light *light);
 
 #endif /* CAELUM_LIGHT_H */

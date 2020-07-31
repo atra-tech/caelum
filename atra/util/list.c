@@ -8,6 +8,8 @@
  *
  *  */
 
+#include <string.h>
+
 #include "list.h"
 #include "log.h"
 
@@ -252,4 +254,112 @@ listdelete(List *list)
 {
     free(list->elem);
     free(list);
+}
+
+void
+veclistinit(VecList *list, size_t elemsize)
+{
+    list->data = malloc(INIT_LIST_CAP * elemsize * sizeof(float));
+    list->elemsize = elemsize;
+    list->cap = INIT_LIST_CAP;
+    list->size = 0;
+}
+
+float *
+veclistat(VecList *list, uint index)
+{
+    return list->data + index * list->elemsize;
+}
+
+void
+veclistpush(VecList *list, float *vec)
+{
+    if (list->size >= list->cap) {
+        veclistgrow(list);
+    }
+    memcpy(list->data + (list->size * list->elemsize),
+            vec, list->elemsize * sizeof(float));
+    list->size++;
+}
+
+void
+veclistgrow(VecList *list)
+{
+    float *newmem;
+
+    list->cap *= 2;
+    newmem = realloc(list->data, list->cap * list->elemsize * sizeof(float));
+
+    if (newmem) {
+        list->data = newmem;
+    } else {
+        logprint(LOG_ERROR, "list: Unable to reallocate memory");
+        die("Memory error");
+    }
+}
+
+void
+veclistclear(VecList *list)
+{
+    list->size = 0;
+}
+
+void
+veclistdelete(VecList *list)
+{
+    free(list->data);
+}
+
+void
+iveclistinit(IVecList *list, size_t elemsize)
+{
+    list->data = malloc(INIT_LIST_CAP * elemsize * sizeof(int));
+    list->elemsize = elemsize;
+    list->cap = INIT_LIST_CAP;
+    list->size = 0;
+}
+
+int *
+iveclistat(IVecList *list, uint index)
+{
+    return list->data + index * list->elemsize;
+}
+
+void
+iveclistpush(IVecList *list, int *vec)
+{
+    if (list->size >= list->cap) {
+        iveclistgrow(list);
+    }
+    memcpy(list->data + (list->size * list->elemsize),
+            vec, list->elemsize * sizeof(float));
+    list->size++;
+}
+
+void
+iveclistgrow(IVecList *list)
+{
+    int *newmem;
+
+    list->cap *= 2;
+    newmem = realloc(list->data, list->cap * list->elemsize * sizeof(int));
+
+    if (newmem) {
+        list->data = newmem;
+    } else {
+        logprint(LOG_ERROR, "list: Unable to reallocate memory");
+        die("Memory error");
+    }
+}
+
+void
+iveclistclear(IVecList *list)
+{
+    list->size = 0;
+}
+
+void
+iveclistdelete(IVecList *list)
+{
+    free(list->data);
 }

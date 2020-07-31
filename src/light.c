@@ -35,7 +35,7 @@ lightcreate(float x, float y, float z, uint radius)
     Light *light = malloc(sizeof(Light));
     uint mapsize;
     
-    mapsize = radius * 2 + 1;
+    mapsize = radius * 2 + 2;
     mapsize *= mapsize;
 
     light->x = x;
@@ -64,7 +64,7 @@ lightcalclightmap(Light *light, World *world)
     uint i, x, y, mapsize;
     LightColor *cell;
 
-    mapsize = light->radius * 2 + 1;
+    mapsize = light->radius * 2 + 2;
     mapsize *= mapsize;
 
     memset(light->lightmap, 0, mapsize * sizeof(LightColor));
@@ -75,7 +75,7 @@ lightcalclightmap(Light *light, World *world)
     }
     x = light->radius;
     y = light->radius;
-    cell = &light->lightmap[y + x * (light->radius * 2 + 1)];
+    cell = light->lightmap + y + x * (light->radius * 2 + 2);
     memcpy(cell, &light->color, sizeof(LightColor));
 }
 
@@ -93,12 +93,15 @@ lightinradius(int lx, int lz, int x, int z, int radius)
 void
 lightclearsegment(Segment *seg)
 {
-    uint y;
+    uint y, mapsize;
     Layer *layer;
 
+    mapsize = SEGMENT_SIZE + 1;
+    mapsize *= mapsize;
+
     for (y = 0; y < WORLD_HEIGHT; y++) {
-        layer = &seg->layers[y];
-        memset(layer->light, 0, LAYER_TILECOUNT * sizeof(LightColor));
+        layer = seg->layers + y;
+        memset(layer->lightmap, 0, mapsize * sizeof(LightColor));
     }
 }
 
@@ -107,22 +110,21 @@ lightapplytilelight(Light *light, Layer *layer,
         uint x, uint z, uint wx, uint wz)
 {
     uint map_x, map_z, mapsize;
-    float *dest, *src;
+    LightColor *dest, *src;
 
     if (!lightinradius(light->x, light->z, wx, wz, light->radius)) {
         return;
     }
-    mapsize = light->radius * 2 + 1;
+    mapsize = light->radius * 2 + 2;
     map_x = wx - (light->x - light->radius);
     map_z = wz - (light->z - light->radius);
 
-    src = (float *)&light->lightmap[map_z + map_x * mapsize];
-    dest = (float *)&layer->light[z + x * SEGMENT_SIZE];
+    src = light->lightmap + map_z + map_x * mapsize;
+    dest = layer->lightmap + z + x * (SEGMENT_SIZE + 1);
 
-    glm_vec3_add(dest, src, dest);
-    /*dest->r += src->r;
+    dest->r += src->r;
     dest->g += src->g;
-    dest->b += src->b;*/
+    dest->b += src->b;
 }
 
 void
@@ -137,8 +139,8 @@ lightapplytosegment(List *lights, Segment *seg)
     for (y = 0; y < WORLD_HEIGHT; y++) {
         layer = &seg->layers[y];
 
-        for (seg_x = 0; seg_x < SEGMENT_SIZE; seg_x++) {
-            for (seg_z = 0; seg_z < SEGMENT_SIZE; seg_z++) {
+        for (seg_x = 0; seg_x < SEGMENT_SIZE + 1; seg_x++) {
+            for (seg_z = 0; seg_z < SEGMENT_SIZE + 1; seg_z++) {
                 tile_x = seg_x + x_offset;
                 tile_z = seg_z + z_offset;
                 
@@ -150,12 +152,6 @@ lightapplytosegment(List *lights, Segment *seg)
             }
         }
     }
-}
-
-void
-lightlayercalcmap(struct World *world, struct Layer *layer)
-{
-    uint x, z;
 }
 
 void
@@ -243,13 +239,22 @@ illuminate(Light *light, uint x, uint y, uint r2, uint dist2, float mult)
     float intensity = 1.0f - ((float)dist2 / (float)r2);
     uint lx = x - (light->x - light->radius);
     uint ly = y - (light->z - light->radius);
-    LightColor *cell = &light->lightmap[ly + lx * (light->radius * 2 + 1)];
+    uint mapsize = light->radius * 2 + 2;
+    LightColor *cells[2];
+    float result[6];
     
     intensity *= mult;
 
-    cell->r = light->color.r * intensity;
-    cell->g = light->color.g * intensity;
-    cell->b = light->color.b * intensity;
+    cells[0] = light->lightmap + ly + lx * mapsize;
+    cells[1] = cells[0] + mapsize;
+   
+    result[0] = light->color.r * intensity;
+    result[1] = light->color.g * intensity;
+    result[2] = light->color.b * intensity;
+    
+    memcpy(result + 3, result, 3 * sizeof(float));
+    memcpy(cells[0], result, 6 * sizeof(float));
+    memcpy(cells[1], result, 6 * sizeof(float));
 }
 
 void

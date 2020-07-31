@@ -9,7 +9,6 @@
  *  */
 
 #include <SDL2/SDL_image.h>
-//#include <SDL2/SDL_ttf.h>
 #include <string.h>
 
 #include "render.h"
@@ -42,19 +41,14 @@ void
 vbufaddvertex(VBuffer *buf, vec3 vertex, vec2 uv, vec3 normal)
 {
     float *data = malloc(8 * sizeof(float));
-    float *v, *u, *n;
 
-    v = data + 0;
-    u = data + 3;
-    n = data + 5;
+    memcpy(data + 0, vertex, 3 * sizeof(float));
+    memcpy(data + 3, uv, 2 * sizeof(float));
+    memcpy(data + 5, normal, 3 * sizeof(float));
 
-    memcpy(v, vertex, 3 * sizeof(float));
-    memcpy(u, uv, 2 * sizeof(float));
-    memcpy(n, normal, 3 * sizeof(float));
-
-    listpushback(buf->verts, v);
-    listpushback(buf->uvs, u);
-    listpushback(buf->norms, n);
+    listpushback(buf->verts, data + 0);
+    listpushback(buf->uvs, data + 3);
+    listpushback(buf->norms, data + 5);
 }
 
 void
@@ -153,6 +147,7 @@ void
 vbufreset(VBuffer *buf)
 {
     uint i;
+
     glDeleteVertexArrays(1, &buf->vao);
     
     for (i = 0; i < buf->buffers->size; i++) {
@@ -168,6 +163,25 @@ vbufreset(VBuffer *buf)
     listclearnoresize(buf->norms);
     listclearnoresize(buf->indxs);
 
+    buf->vao = 0;
+    buf->vbocount = 0;
+    buf->indxcount = 0;
+}
+
+void
+vbufresetnoclear(VBuffer *buf)
+{
+    uint i;
+    
+    glDeleteVertexArrays(1, &buf->vao);
+    
+    for (i = 0; i < buf->buffers->size; i++) {
+        glDeleteBuffers(1, listat(buf->buffers, i));
+    }
+
+    listdealloc(buf->buffers);
+    listclearnoresize(buf->buffers);
+    
     buf->vao = 0;
     buf->vbocount = 0;
     buf->indxcount = 0;
@@ -203,6 +217,144 @@ vbufdelete(VBuffer *buf)
     buf->vao = 0;
     buf->vbocount = 0;
     buf->indxcount = 0;
+}
+
+void
+fastvboinit(FastVBO *vbo)
+{
+    vbo->vao = 0;
+    vbo->vbocount = 0;
+    vbo->indxcount = 0;
+
+    iveclistinit(&vbo->buffers, 1);
+    veclistinit(&vbo->verts, 3);
+    veclistinit(&vbo->uvs, 2);
+    veclistinit(&vbo->norms, 3);
+    iveclistinit(&vbo->indxs, 3);
+}
+
+void
+fastvboaddvertex(FastVBO *vbo, vec3 vertex, vec2 uv, vec3 normal)
+{
+    veclistpush(&vbo->verts, vertex);
+    veclistpush(&vbo->uvs, uv);
+    veclistpush(&vbo->norms, normal);
+
+}
+
+void
+fastvboaddindex(FastVBO *vbo, ivec3 index)
+{
+    iveclistpush(&vbo->indxs, index);
+}
+
+void
+fastvbobindvbo(FastVBO *vbo, VecList *list)
+{
+    uint buf;
+
+    glGenBuffers(1, &buf);
+    glBindBuffer(GL_ARRAY_BUFFER, buf);
+    glBufferData(GL_ARRAY_BUFFER, list->size * list->elemsize * sizeof(float),
+                 list->data, GL_STATIC_DRAW);
+    glVertexAttribPointer(vbo->vbocount, list->elemsize,
+            GL_FLOAT, GL_FALSE, 0, NULL);
+    glEnableVertexAttribArray(vbo->vbocount++);
+
+    iveclistpush(&vbo->buffers, (int *)&buf);
+}
+
+void
+fastvbobindebo(FastVBO *vbo)
+{
+    uint ebo;
+
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+            vbo->indxs.size * sizeof(int) * 3,
+            vbo->indxs.data, GL_STATIC_DRAW);
+
+    iveclistpush(&vbo->buffers, (int *)&ebo);
+}
+
+void
+fastvbobindvao(FastVBO *vbo)
+{
+    glBindVertexArray(vbo->vao);
+}
+
+void
+fastvbobind(FastVBO *vbo)
+{
+    if (vbo->vao != 0)
+        fastvboreset(vbo);
+
+    glGenVertexArrays(1, &vbo->vao);
+    fastvbobindvao(vbo);
+    fastvbobindvbo(vbo, &vbo->verts);
+    fastvbobindvbo(vbo, &vbo->uvs);
+    fastvbobindvbo(vbo, &vbo->norms);
+    fastvbobindebo(vbo);
+}
+
+void
+fastvboclear(FastVBO *vbo)
+{
+    veclistclear(&vbo->verts);
+    veclistclear(&vbo->uvs);
+    veclistclear(&vbo->norms);
+    iveclistclear(&vbo->indxs);
+
+    vbo->indxcount = 0;
+}
+
+void
+fastvboreset(FastVBO *vbo)
+{
+    uint i;
+
+    glDeleteVertexArrays(1, &vbo->vao);
+    
+    for (i = 0; i < vbo->buffers.size; i++) {
+        glDeleteBuffers(1, (uint *)iveclistat(&vbo->buffers, i));
+    }
+    iveclistclear(&vbo->buffers);
+    veclistclear(&vbo->verts);
+    veclistclear(&vbo->uvs);
+    veclistclear(&vbo->norms);
+    iveclistclear(&vbo->indxs);
+
+    vbo->vao = 0;
+    vbo->vbocount = 0;
+    vbo->indxcount = 0;
+}
+/*
+void
+fastvboresetnoclear(FastVBO *vbo)
+{
+
+}
+*/
+void
+fastvbodelete(FastVBO *vbo)
+{
+    uint i;
+    glDeleteVertexArrays(1, &vbo->vao);
+
+    for (i = 0; i < vbo->buffers.size; i++) {
+        glDeleteBuffers(1, (uint *)iveclistat(&vbo->buffers, i));
+    }
+
+    iveclistdelete(&vbo->buffers);
+    veclistdelete(&vbo->verts);
+    veclistdelete(&vbo->uvs);
+    veclistdelete(&vbo->norms);
+    iveclistdelete(&vbo->indxs);
+
+    vbo->vao = 0;
+    vbo->vbocount = 0;
+    vbo->indxcount = 0;
 }
 
 void

@@ -12,7 +12,6 @@
 #define ATRA_RENDER_H
 
 #include <cglm/cglm.h>
-#include <SDL2/SDL_ttf.h>
 
 #include "entity.h"
 #include "opengl.h"
@@ -20,7 +19,6 @@
 #include "util/util.h"
 
 typedef SDL_Color Color;
-typedef TTF_Font Font;
 
 typedef struct {
     uint vao;
@@ -32,6 +30,17 @@ typedef struct {
     List *norms;
     List *indxs;
 } VBuffer;
+
+typedef struct {
+    uint vao;
+    uint vbocount;
+    uint indxcount;
+    IVecList buffers;
+    VecList verts;
+    VecList uvs;
+    VecList norms;
+    IVecList indxs;
+} FastVBO;
 
 typedef struct {
     uint prog;
@@ -77,7 +86,20 @@ void vbufbindvao(VBuffer *);
 void vbufbind(VBuffer *);
 void vbufclear(VBuffer *);
 void vbufreset(VBuffer *);
+void vbufresetnoclear(VBuffer *);
 void vbufdelete(VBuffer *);
+
+void fastvboinit(FastVBO *);
+void fastvboaddvertex(FastVBO *, vec3 vertex, vec2 uv, vec3 normal);
+void fastvboaddindex(FastVBO *, ivec3 index);
+void fastvbobindvbo(FastVBO *, VecList *list);
+void fastvbobindebo(FastVBO *);
+void fastvbobindvao(FastVBO *);
+void fastvbobind(FastVBO *);
+void fastvboclear(FastVBO *);
+void fastvboreset(FastVBO *);
+//void fastvboresetnoclear(FastVBO *);
+void fastvbodelete(FastVBO *);
 
 void fbufinit(FBuffer *, uint width, uint height, uint comp, uint attach);
 void fbufbind(FBuffer *);
