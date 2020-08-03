@@ -77,6 +77,9 @@ lightcalclightmap(Light *light, World *world)
     y = light->radius;
     cell = light->lightmap + y + x * (light->radius * 2 + 2);
     memcpy(cell, &light->color, sizeof(LightColor));
+    memcpy(cell + 1, &light->color, sizeof(LightColor));
+    memcpy(cell + light->radius * 2 + 2, &light->color, sizeof(LightColor));
+    memcpy(cell + light->radius * 2 + 3, &light->color, sizeof(LightColor));
 }
 
 int
@@ -158,8 +161,8 @@ void
 castlight(Light *light, World *world, uint row, float startslope,
         float endslope, uint xx, uint xy, uint yx, uint yy)
 {
-    float startslopenext, lslope, rslope;
-    int dx, dy, sax, say, blocked;
+    float startslopenext, lslope, rslope, intensity;
+    int dx, dy, sax, say, ox, oy, blocked, run2;
     uint i, ax, ay, radius2, dist2;
     Tile *tile;
 
@@ -174,8 +177,9 @@ castlight(Light *light, World *world, uint row, float startslope,
         for (dx = -i, dy = -i; dx <= 0; dx++) {
             lslope = (dx - 0.5) / (dy + 0.5);
             rslope = (dx + 0.5) / (dy - 0.5);
+            intensity = 1.0f;
 
-            if (startslope <= rslope) {
+            if (startslope < rslope) {
                 continue;
             } else if (endslope > lslope) {
                 break;
@@ -187,6 +191,7 @@ castlight(Light *light, World *world, uint row, float startslope,
                     (say < 0 && abs(say) > light->z)) {
                 continue;
             }
+
             ax = light->x + sax;
             ay = light->z + say;
 
@@ -198,10 +203,18 @@ castlight(Light *light, World *world, uint row, float startslope,
             tile = worldgettoptileat(world, ax, light->y, ay);
             
             if (dist2 < radius2) {
-                if (tile->data && tile->data->attr & TILE_WALL) {
-                    //illuminate(light, ax, ay, radius2, dist2, 0.4);
-                } else {
-                    illuminate(light, ax, ay, radius2, dist2, 1.0);
+                if (!(tile->data && tile->data->attr & TILE_WALL)) {
+                    ox = sax >= 0;
+                    oy = say >= 0;
+                    run2 = sax == 0 || say == 0;
+                    
+                    illuminate(light, ax + ox, ay + oy, radius2, dist2, intensity);
+                    ox = sax > 0;
+                    oy = say > 0;
+
+                    if (run2) {
+                        illuminate(light, ax + ox, ay + oy, radius2, dist2, intensity);
+                    }
                 }
             }
 
@@ -244,18 +257,94 @@ illuminate(Light *light, uint x, uint y, uint r2, uint dist2, float mult)
     float result[6];
     
     intensity *= mult;
+    /*LightColor *cell;
+    
+    
+    cell = light->lightmap + ly + lx * mapsize;
+    cell->r = light->color.r * intensity;
+    cell->g = light->color.g * intensity;
+    cell->b = light->color.b * intensity;
+    
+    if (x >= (uint)light->x) {
+        memcpy(cell + 1, cell, sizeof(LightColor));
+    }
+
+    if (y >= (uint)light->z) {
+        memcpy(cell + mapsize, cell, sizeof(LightColor));
+    }*/
 
     cells[0] = light->lightmap + ly + lx * mapsize;
-    cells[1] = cells[0] + mapsize;
+    /*cells[1] = cells[0] + mapsize;*/
    
     result[0] = light->color.r * intensity;
     result[1] = light->color.g * intensity;
     result[2] = light->color.b * intensity;
     
-    memcpy(result + 3, result, 3 * sizeof(float));
+    /*memcpy(result + 3, result, 3 * sizeof(float));
     memcpy(cells[0], result, 6 * sizeof(float));
-    memcpy(cells[1], result, 6 * sizeof(float));
+    memcpy(cells[1], result, 6 * sizeof(float));*/
+
+    memcpy(cells[0], result, 3 * sizeof(float));
 }
+
+void
+lightsmoothlightmaps(World *world, Segment *seg)
+{
+    uint idx, l, x, z, mapsize, smooth;
+    Light *light;
+    LightColor *color;
+    LightColor *lightmap;
+
+    for (l = 0; l < seg->lights->size; l++) {
+        light = listat(seg->lights, l);
+        mapsize = light->radius * 2 + 2;
+        lightmap = light->lightmap;
+
+        for (x = 1; x < mapsize - 1; x++) {
+            for (z = 1; z < mapsize - 1; z++) {
+                idx = z + x * mapsize;
+                smooth = 0;
+                color = lightmap + idx;
+
+                if (!color->r && !color->g && !color->b) {
+                    continue;
+                }
+                color = lightmap + idx - 1;
+                smooth += !color->r && !color->g && !color->b;
+                color = lightmap + idx + 1;
+                smooth += !color->r && !color->g && !color->b;
+                color = lightmap + idx - mapsize;
+                smooth += !color->r && !color->g && !color->b;
+                color = lightmap + idx + mapsize;
+                smooth += !color->r && !color->g && !color->b;
+                
+                if (smooth) {
+                    color = lightmap + idx;
+                    color->r *= 0.7f;
+                    color->g *= 0.7f;
+                    color->b *= 0.7f;
+                }
+            }
+        }
+    }
+}
+/*
+void
+lightcalclightmapraycast(Light *light, World *world)
+{
+    uint idx, wx, wz, i, mapsize;
+    LightColor *cell;
+    float dist;
+
+    mapsize = light->radius * 2 + 2;
+    mapsize *= mapsize;
+
+    memset(light->lightmap, 0, mapsize * sizeof(LightColor));
+
+    for (idx = 0; idx < mapsize; idx++) {
+        
+    }
+}*/
 
 void
 lightdelete(Light *light)

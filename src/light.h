@@ -12,9 +12,10 @@
 #define CAELUM_LIGHT_H
 
 #include <cglm/cglm.h>
+#include <time.h>
+
 #include "util/util.h"
 #include "util/list.h"
-#include <time.h>
 
 struct World;
 struct Segment;
@@ -34,10 +35,12 @@ typedef struct Light {
 Light * lightcreate(float x, float y, float z, uint radius);
 void lightsetcolor(Light *light, float r, float g, float b);
 void lightcalclightmap(Light *light, struct World *world);
+void lightcalclightmapraycast(Light *light, struct World *world);
 void lightclearlightmap(Light *light);
 void lightapplytosegment(List *lights, struct Segment *seg);
 void lightclearsegment(struct Segment *seg);
 void lightsegmentcalcmap(struct World *, struct Segment *);
+void lightsmoothlightmaps(struct World *world, struct Segment *seg);
 void lightdelete(Light *light);
 
 #endif /* CAELUM_LIGHT_H */

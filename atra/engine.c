@@ -18,7 +18,6 @@
 
 static void initsdl();
 static void initimg();
-//static void initttf();
 static void initglew();
 
 static int init = 0;
@@ -47,7 +46,6 @@ atrainit(const char* title, int width, int height, Window *win, Context *con)
     SDL_SetWindowMinimumSize(win->wndw, 800, 600);
 
     initimg();
-    //initttf();
     initglew();
 
     if (SDL_GL_SetSwapInterval(1) < 0) {
@@ -133,7 +131,6 @@ atrashutdown()
     }
     logprint(LOG_INFO, "Shutting down...");
     statestop();
-    TTF_Quit();
     IMG_Quit();
     SDL_Quit();
 }
@@ -157,17 +154,7 @@ initimg()
         die("Fatal error! Terminating...");
     }
 }
-/*
-void
-initttf()
-{
-    if (TTF_Init() < 0) {
-        logprint(LOG_FATAL, "atra: SDL_ttf initialisation failure: "
-                            "SDL error: $s", SDL_GetError());
-        die("Fatal error! Terminating...");
-    }
-}
-*/
+
 void
 initglew()
 {

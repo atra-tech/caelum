@@ -206,6 +206,14 @@ playerupdate(World *world, float dt)
 
     glm_vec3_mul(player->vel, dt_vec, player->vel);
 
+    player->ent.x += player->vel[0];
+    player->ent.y += player->vel[1];
+    player->ent.z += player->vel[2];
+    player->aabb.x1 += player->vel[0];
+    player->aabb.y1 += player->vel[2];
+    player->aabb.x2 += player->vel[0];
+    player->aabb.y2 += player->vel[2];
+    
     if (player->ent.x < 1.001) {
         player->ent.x = 1.001;
     } else if (player->ent.x > WORLD_SIZE - 1.001) {
@@ -216,14 +224,6 @@ playerupdate(World *world, float dt)
     } else if (player->ent.z > WORLD_SIZE - 1.001) {
         player->ent.z = WORLD_SIZE - 1.001;
     }
-
-    player->ent.x += player->vel[0];
-    player->ent.y += player->vel[1];
-    player->ent.z += player->vel[2];
-    player->aabb.x1 += player->vel[0];
-    player->aabb.y1 += player->vel[2];
-    player->aabb.x2 += player->vel[0];
-    player->aabb.y2 += player->vel[2];
 
     agentworldcollide(player, world);
     agentcalccolor(player, world);

@@ -507,6 +507,7 @@ worldhandle(World *world, Event *e)
     //  TODO: tile picking algorithm
     int i, j;
     int mx, my, mbut, tile_x, tile_z, relight, dirty;
+    uint seg_x, seg_z;
     vec3 ray;
     float dist;
     Camera *cam;
@@ -582,9 +583,13 @@ worldhandle(World *world, Event *e)
 
     for (i = -1; i <= 1; i++) {
         for (j = -1; j <= 1; j++) {
-            seg = worldgetsegmentat(world,
-                    tile_x + i * SEGMENT_SIZE,
-                    tile_z + j * SEGMENT_SIZE);
+            seg_x = tile_x + i * SEGMENT_SIZE;
+            seg_z = tile_z + j * SEGMENT_SIZE;
+
+            if (seg_x > WORLD_SIZE - 1) continue;
+            if (seg_z > WORLD_SIZE - 1) continue;
+
+            seg = worldgetsegmentat(world, seg_x, seg_z);
             if (relight) {
                 seg->relight = 1;
             } else if (dirty) {
@@ -1218,6 +1223,7 @@ segmentcalclights(World *world, Segment *seg)
 
     for (i = 0; i < seg->lights->size; i++) {
         lightcalclightmap(listat(seg->lights, i), world);
+        lightsmoothlightmaps(world, seg);
     }
 }
 
@@ -1229,9 +1235,7 @@ segmentrelight(World *world, Segment *seg)
     lightlist = segmentgetadjlights(world, seg);
 
     lightclearsegment(seg);
-
     lightapplytosegment(lightlist, seg);
-
     listdelete(lightlist);
 }
 
@@ -1342,9 +1346,9 @@ lightwallsideinterpolate(World *world, uint x, uint y, uint z,
         break;
     }
     memcpy(color, vertlight, sizeof(LightColor));
-    color[0] *= 0.8f;
-    color[1] *= 0.8f;
-    color[2] *= 0.8f;
+/*    color[0] *= 0.9f;
+    color[1] *= 0.9f;
+    color[2] *= 0.9f;*/
 }
 
 void 
@@ -1389,9 +1393,9 @@ lightwalltopinterpolate(World *world, uint x, uint y, uint z,
         break;
     }
     memcpy(color, vertlight, sizeof(LightColor));
-    color[0] *= 0.6f;
-    color[1] *= 0.6f;
-    color[2] *= 0.6f;
+    color[0] *= 0.8f;
+    color[1] *= 0.8f;
+    color[2] *= 0.8f;
 }
 
 void
@@ -1469,7 +1473,7 @@ worldgetsegmentat(World *world, uint x, uint z)
     x /= SEGMENT_SIZE;
     z /= SEGMENT_SIZE;
 
-    return &world->segs[z + x * SEGMENT_COUNT];
+    return world->segs + z + x * SEGMENT_COUNT;
 }
 
 Layer *
@@ -1489,7 +1493,7 @@ worldgetlightcellat(World *world, uint x, uint y, uint z)
     x %= SEGMENT_SIZE + 1;
     z %= SEGMENT_SIZE + 1;
 
-    return &layer->lightmap[z + x * (SEGMENT_SIZE + 1)];
+    return layer->lightmap + z + x * (SEGMENT_SIZE + 1);
 }
 
 Tile *
@@ -1511,7 +1515,7 @@ worldgetsubtileat(World *world, uint x, uint y, uint z)
     x %= SEGMENT_SIZE;
     z %= SEGMENT_SIZE;
 
-    return &layer->subtiles[z + x * SEGMENT_SIZE];
+    return layer->subtiles + z + x * SEGMENT_SIZE;
 }
 
 Tile *
