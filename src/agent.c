@@ -53,7 +53,6 @@ static const float playernorms[] = {
 };
 
 static void playermesh(void);
-static void agentcalccolor(Agent *agent, World *world);
 static void agentworldcollide(Agent *agent, World *world);
 
 static Agent *player;
@@ -226,10 +225,13 @@ playerupdate(World *world, float dt)
     }
 
     agentworldcollide(player, world);
-    agentcalccolor(player, world);
+    
+    player->color[0] = 0.7f;
+    player->color[1] = 0.7f;
+    player->color[2] = 0.7f;
 
-    playercam->ent.x = player->ent.x - 6;
-    playercam->ent.y = player->ent.y + 16;
+    playercam->ent.x = player->ent.x /*- 0;*/ - 6;
+    playercam->ent.y = player->ent.y /*+ 1.0;*/ + 16;
     playercam->ent.z = player->ent.z;
 }
 
@@ -273,7 +275,7 @@ playermesh(void)
     ivec3 index;
     TileData *data = tilegetdata("maint_floor");
 
-    indexcount = player->vbo.indxcount / 3;
+    indexcount = (player->vbo.indxcount * 2) / 3;
 
     vbufclear(&player->vbo);
 
@@ -307,55 +309,54 @@ playermesh(void)
         vbufaddindex(&player->vbo, index);
 
         indexcount += 4;
-        player->vbo.indxcount += 12;
+        player->vbo.indxcount += 6;
     }
     vbufbind(&player->vbo);
 }
-
+/*
 void
 agentcalccolor(Agent *agent, World *world)
 {
-    uint x, y, z;
-    LightColor *color;
+    uint x, y, z, seg_x, seg_z;
+    float dx, dz;
+    LightColor lerp_x[2];
+    LightColor *cs[2];
+    LightColor *lightmap;
+    Layer *layer;
 
     x = agent->ent.x;
     y = agent->ent.y + 0.5f;
     z = agent->ent.z;
+    seg_x = x % SEGMENT_SIZE;
+    seg_z = z % SEGMENT_SIZE;
 
     agent->color[0] = 0.0f;
     agent->color[1] = 0.0f;
     agent->color[2] = 0.0f;
 
-    color = worldgetlightcellat(world, x, y, z);
-    agent->color[0] += color->r;
-    agent->color[1] += color->g;
-    agent->color[2] += color->b;
+    layer = worldgetlayerat(world, x, y, z);
+    lightmap = layer->lightmap;
 
-    color = worldgetlightcellat(world, x + 1, y, z);
-    agent->color[0] += color->r;
-    agent->color[1] += color->g;
-    agent->color[2] += color->b;
+    dx = agent->ent.x - x;
+    dz = agent->ent.z - z;
 
-    color = worldgetlightcellat(world, x - 1, y, z);
-    agent->color[0] += color->r;
-    agent->color[1] += color->g;
-    agent->color[2] += color->b;
+    cs[0] = lightmap + (seg_z + 0) + (seg_x + 0) * (SEGMENT_SIZE + 1);
+    cs[1] = lightmap + (seg_z + 0) + (seg_x + 1) * (SEGMENT_SIZE + 1);
+    lerp_x[0].r = cs[0]->r + (cs[1]->r - cs[0]->r) * dx;
+    lerp_x[0].g = cs[0]->g + (cs[1]->g - cs[0]->g) * dx;
+    lerp_x[0].b = cs[0]->b + (cs[1]->b - cs[0]->b) * dx;
+    
+    cs[0] = lightmap + (seg_z + 1) + (seg_x + 0) * (SEGMENT_SIZE + 1);
+    cs[1] = lightmap + (seg_z + 1) + (seg_x + 1) * (SEGMENT_SIZE + 1);
+    lerp_x[1].r = cs[0]->r + (cs[1]->r - cs[0]->r) * dx;
+    lerp_x[1].g = cs[0]->g + (cs[1]->g - cs[0]->g) * dx;
+    lerp_x[1].b = cs[0]->b + (cs[1]->b - cs[0]->b) * dx;
 
-    color = worldgetlightcellat(world, x, y, z + 1);
-    agent->color[0] += color->r;
-    agent->color[1] += color->g;
-    agent->color[2] += color->b;
-
-    color = worldgetlightcellat(world, x, y, z - 1);
-    agent->color[0] += color->r;
-    agent->color[1] += color->g;
-    agent->color[2] += color->b;
-
-    agent->color[0] *= 0.2f;
-    agent->color[1] *= 0.2f;
-    agent->color[2] *= 0.2f;
+    agent->color[0] = lerp_x[0].r + (lerp_x[1].r - lerp_x[0].r) * dz;
+    agent->color[1] = lerp_x[0].g + (lerp_x[1].g - lerp_x[0].g) * dz;
+    agent->color[2] = lerp_x[0].b + (lerp_x[1].b - lerp_x[0].b) * dz;
 }
-
+*/
 void
 agentworldcollide(Agent *agent, World *world)
 {
@@ -390,58 +391,3 @@ agentworldcollide(Agent *agent, World *world)
         }
     }
 }
-/*
-void
-agentworldcollide(Agent *agent, World *world)
-{
-    uint nx, ny, nz;
-    float dx, dz, pad, invpad;
-    Tile *tile;
-
-    nx = agent->ent.x;
-    ny = agent->ent.y + 0.5;
-    nz = agent->ent.z;
-    dx = agent->ent.x - nx;
-    dz = agent->ent.z - nz;
-    pad = 0.20f;
-    invpad = 1 - pad;
-
-    tile = worldgettoptileat(world, nx, ny, nz);
-
-    if (tile->data) {
-        agent->ent.y = ny;
-    } else {
-        tile = worldgetsubtileat(world, nx, ny, nz);
-        if (tile->data) {
-            agent->ent.y = ny - 0.17;
-        }
-    }
-    tile = worldgettoptileat(world, nx - 1, ny, nz);
-
-    if (dx < pad && tile->data) {
-        if (tile->data->attr & TILE_WALL) {
-            agent->ent.x = nx + pad;
-        }
-    }    
-    tile = worldgettoptileat(world, nx + 1, ny, nz);
-
-    if (dx > invpad && tile->data) {
-        if (tile->data->attr & TILE_WALL) {
-            agent->ent.x = nx + invpad;
-        }
-    }
-    tile = worldgettoptileat(world, nx, ny, nz - 1);
-
-    if (dz < pad && tile->data) {
-        if (tile->data->attr & TILE_WALL) {
-            agent->ent.z = nz + pad;
-        }
-    }
-    tile = worldgettoptileat(world, nx, ny, nz + 1);
-
-    if (dz > invpad && tile->data) {
-        if (tile->data->attr & TILE_WALL) {
-            agent->ent.z = nz + invpad;
-        }
-    }
-}*/

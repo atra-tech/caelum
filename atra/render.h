@@ -128,9 +128,11 @@ void shaderaddmat4(Shader *shader, const char *name, mat4 mat);
 void shaderdelete(Shader *shader);
 
 void texinit(void);
-void texload(Texture *, const char* path);
+void texload(Texture *, const char *path);
+void texloadaniso(Texture *, const char *path);
 void texbind(Texture *);
 void texfind(Texture *, const char *path);
+void texfindaniso(Texture *, const char *path);
 void texget(Texture *, int x, int y, float *uvs);
 void texgetrect(Texture *, TextureRect *rect, float *uvs);
 void texsetactivetexture(uint texunit);

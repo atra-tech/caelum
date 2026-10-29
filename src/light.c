@@ -8,8 +8,6 @@
 *
 * */
 
-#include <xmmintrin.h>
-
 #include "light.h"
 #include "world.h"
 #include "util/log.h"
@@ -22,30 +20,26 @@ static const int mults[4][8] = {
     {1, 0, 0, 1, -1, 0, 0, -1}
 };
 
-static void illuminate(Light *light, uint x, uint y, uint r2, uint dist2,
-        float mult);
-static void castlight(Light *light, World *world, uint row, float startslope,
-        float endslope, uint xx, uint xy, uint yx, uint yy);
-static void lightapplytilelight(Light *light, Layer *layer,
-        uint x, uint z, uint wx, uint wz);
+static inline void illuminate(Light *light, int x, int y);
+static void castlight(Light *light, World *world, int row, float startslope,
+        float endslope, int xx, int xy, int yx, int yy);
 
 Light *
-lightcreate(float x, float y, float z, uint radius)
+lightcreate(float x, float y, float z, int radius)
 {
     Light *light = malloc(sizeof(Light));
-    uint mapsize;
+    const int mapsize = radius * 2 * LIGHT_RESOLUTION;
     
-    mapsize = radius * 2 + 2;
-    mapsize *= mapsize;
-
-    light->x = x;
-    light->y = y;
-    light->z = z;
-    light->color.r = 0.0f;
-    light->color.g = 0.0f;
-    light->color.b = 0.0f;
+    light->pos[0] = x;
+    light->pos[1] = y;
+    light->pos[2] = z;
+    light->active = 1;
+    light->color[0] = 0.0f;
+    light->color[1] = 0.0f;
+    light->color[2] = 0.0f;
     light->radius = radius;
-    light->lightmap = calloc(mapsize, sizeof(LightColor));
+    light->dirty = 1;
+    light->map = lightmap_create(mapsize, mapsize);
 
     return light;
 }
@@ -53,33 +47,36 @@ lightcreate(float x, float y, float z, uint radius)
 void
 lightsetcolor(Light *light, float r, float g, float b)
 {
-    light->color.r = r;
-    light->color.g = g;
-    light->color.b = b;
+    light->color[0] = r;
+    light->color[1] = g;
+    light->color[2] = b;
 }
 
 void
 lightcalclightmap(Light *light, World *world)
 {
-    uint i, x, y, mapsize;
-    LightColor *cell;
+    int i, x, y, mapsize, mapwidth;
+    int *cell;
 
-    mapsize = light->radius * 2 + 2;
-    mapsize *= mapsize;
+    mapwidth = light->radius * 2 * LIGHT_RESOLUTION;
+    mapsize = mapwidth * mapwidth;
 
-    memset(light->lightmap, 0, mapsize * sizeof(LightColor));
+    memset(light->map.pixels, 0, mapsize);
 
     for (i = 0; i < 8; i++) {
-        castlight(light, world, 1, 1.0, 0.0, mults[0][i], mults[1][i],
+        castlight(light, world, 1, 1.0, 0.0,
+                mults[0][i], mults[1][i],
                 mults[2][i], mults[3][i]);
     }
-    x = light->radius;
-    y = light->radius;
-    cell = light->lightmap + y + x * (light->radius * 2 + 2);
-    memcpy(cell, &light->color, sizeof(LightColor));
-    memcpy(cell + 1, &light->color, sizeof(LightColor));
-    memcpy(cell + light->radius * 2 + 2, &light->color, sizeof(LightColor));
-    memcpy(cell + light->radius * 2 + 3, &light->color, sizeof(LightColor));
+
+    /* Set the immediate surrounding cells */
+    x = light->radius * 4 - 1;
+    y = light->radius * 4 - 1;
+    cell = light->map.pixels + x + y * mapwidth;
+    *cell = 0xFFFFFFFF; cell += 1;
+    *cell = 0xFFFFFFFF; cell += light->radius * 2 * LIGHT_RESOLUTION;
+    *cell = 0xFFFFFFFF; cell -= 1;
+    *cell = 0xFFFFFFFF;
 }
 
 int
@@ -92,7 +89,7 @@ lightinradius(int lx, int lz, int x, int z, int radius)
 
     return dx * dx + dz * dz < radius * radius;
 }
-
+/*
 void
 lightclearsegment(Segment *seg)
 {
@@ -105,9 +102,11 @@ lightclearsegment(Segment *seg)
     for (y = 0; y < WORLD_HEIGHT; y++) {
         layer = seg->layers + y;
         memset(layer->lightmap, 0, mapsize * sizeof(LightColor));
+
     }
 }
-
+*/
+/*
 void
 lightapplytilelight(Light *light, Layer *layer,
         uint x, uint z, uint wx, uint wz)
@@ -129,55 +128,53 @@ lightapplytilelight(Light *light, Layer *layer,
     dest->g += src->g;
     dest->b += src->b;
 }
+*/
 
-void
-lightapplytosegment(List *lights, Segment *seg)
+static inline Tile *
+lightgetworldspacetile(World *restrict world, uint x, uint z)
 {
-    const uint x_offset = seg->x * SEGMENT_SIZE;
-    const uint z_offset = seg->z * SEGMENT_SIZE;
-    uint seg_x, seg_z, tile_x, tile_z, l_idx, y;
-    Layer *layer;
-    Light *light;
+    //return worldgettoptileat(world, x >> 2, 0, z >> 2);
+    return worldgettoptileat(world, x, 0, z);
+}
 
-    for (y = 0; y < WORLD_HEIGHT; y++) {
-        layer = &seg->layers[y];
+/* Writes a light's lightmap image to a segment's lightmap texture */
+void
+lightapplytosegment(Light *light, Segment *seg)
+{
+    const int half_seg = SEGMENT_SIZE / 2;
+    const int map_size = LIGHT_MAX_RADIUS * 2 * LIGHT_RESOLUTION;
 
-        for (seg_x = 0; seg_x < SEGMENT_SIZE + 1; seg_x++) {
-            for (seg_z = 0; seg_z < SEGMENT_SIZE + 1; seg_z++) {
-                tile_x = seg_x + x_offset;
-                tile_z = seg_z + z_offset;
-                
-                for (l_idx = 0; l_idx < lights->size; l_idx++) {
-                    light = listat(lights, l_idx);
-                    lightapplytilelight(light, layer,
-                            seg_x, seg_z, tile_x, tile_z);
-                }
-            }
-        }
-    }
+    const int light_x = light->pos[0] - (seg->x * SEGMENT_SIZE) + half_seg;
+    const int light_z = light->pos[2] - (seg->z * SEGMENT_SIZE) + half_seg;
+    const int map_x = light_x * map_size;
+    const int map_y = light_z * map_size;
+
+    glBindTexture(GL_TEXTURE_2D, seg->light_tex.id);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, map_x, map_y, map_size, map_size,
+            GL_BGRA, GL_UNSIGNED_BYTE, light->map.pixels);
 }
 
 void
-castlight(Light *light, World *world, uint row, float startslope,
-        float endslope, uint xx, uint xy, uint yx, uint yy)
+castlight(Light *light, World *world, int row, float startslope,
+        float endslope, int xx, int xy, int yx, int yy)
 {
-    float startslopenext, lslope, rslope, intensity;
+    float startslopenext, lslope, rslope;
     int dx, dy, sax, say, ox, oy, blocked, run2;
-    uint i, ax, ay, radius2, dist2;
+    int i, ax, ay, radius, radius2, dist2;
     Tile *tile;
 
     if (startslope <= endslope) {
         return;
     }
     startslopenext = startslope;
+    radius = (light->radius) * LIGHT_RESOLUTION - 1;
 
-    for (i = row; i <= light->radius; i++) {
+    for (i = row; i <= radius; i++) {
         blocked = 0;
 
         for (dx = -i, dy = -i; dx <= 0; dx++) {
             lslope = (dx - 0.5) / (dy + 0.5);
             rslope = (dx + 0.5) / (dy - 0.5);
-            intensity = 1.0f;
 
             if (startslope < rslope) {
                 continue;
@@ -187,20 +184,20 @@ castlight(Light *light, World *world, uint row, float startslope,
             sax = dx * xx + dy * xy;
             say = dx * yx + dy * yy;
 
-            if ((sax < 0 && abs(sax) > light->x) ||
-                    (say < 0 && abs(say) > light->z)) {
+            if ((sax < 0 && abs(sax) > light->pos[0]) ||
+                    (say < 0 && abs(say) > light->pos[2])) {
                 continue;
             }
-
-            ax = light->x + sax;
-            ay = light->z + say;
+            ax = light->pos[0] + sax;
+            ay = light->pos[2] + say;
 
             if (ax >= WORLD_SIZE || ay >= WORLD_SIZE) {
                 continue;
             }
-            radius2 = light->radius * light->radius;
+            radius2 = radius * radius;
             dist2 = dx * dx + dy * dy;
-            tile = worldgettoptileat(world, ax, light->y, ay);
+            tile = lightgetworldspacetile(world, light->pos[0] + (sax * 0.25),
+                    light->pos[2] + (say * 0.25));
             
             if (dist2 < radius2) {
                 if (!(tile->data && tile->data->attr & TILE_WALL)) {
@@ -208,12 +205,12 @@ castlight(Light *light, World *world, uint row, float startslope,
                     oy = say >= 0;
                     run2 = sax == 0 || say == 0;
                     
-                    illuminate(light, ax + ox, ay + oy, radius2, dist2, intensity);
+                    illuminate(light, ax + ox, ay + oy);
                     ox = sax > 0;
                     oy = say > 0;
 
                     if (run2) {
-                        illuminate(light, ax + ox, ay + oy, radius2, dist2, intensity);
+                        illuminate(light, ax + ox, ay + oy);
                     }
                 }
             }
@@ -235,8 +232,7 @@ castlight(Light *light, World *world, uint row, float startslope,
                 if (tile->data->attr & TILE_WALL) {
                     blocked = 1;
                     startslopenext = rslope;
-                    castlight(light, world, i + 1, startslope, lslope,
-                            xx, xy, yx, yy);
+                    castlight(light, world, i + 1, startslope, lslope, xx, xy, yx, yy);
                 }
             }
         }
@@ -246,47 +242,25 @@ castlight(Light *light, World *world, uint row, float startslope,
     }
 }
 
-void
-illuminate(Light *light, uint x, uint y, uint r2, uint dist2, float mult)
+/* Sets the light level of a cell */
+static inline void
+illuminate(Light *light, int x, int y)
 {
-    float intensity = 1.0f - ((float)dist2 / (float)r2);
-    uint lx = x - (light->x - light->radius);
-    uint ly = y - (light->z - light->radius);
-    uint mapsize = light->radius * 2 + 2;
-    LightColor *cells[2];
-    float result[6];
-    
-    intensity *= mult;
-    /*LightColor *cell;
-    
-    
-    cell = light->lightmap + ly + lx * mapsize;
-    cell->r = light->color.r * intensity;
-    cell->g = light->color.g * intensity;
-    cell->b = light->color.b * intensity;
-    
-    if (x >= (uint)light->x) {
-        memcpy(cell + 1, cell, sizeof(LightColor));
+    //const int lx = x - (light->pos[0] - light->radius) * LIGHT_RESOLUTION;
+    //const int ly = y - (light->pos[2] - light->radius) * LIGHT_RESOLUTION;
+    int lx = x - light->pos[0] + light->radius * LIGHT_RESOLUTION;
+    int ly = y - light->pos[2] + light->radius * LIGHT_RESOLUTION;
+
+    const int mapsize = light->radius * 2 * LIGHT_RESOLUTION;
+    int *cell = light->map.pixels + lx + ly * mapsize;
+
+    if (lx > mapsize || lx < 0 ||
+            ly > mapsize || ly < 0) {
+        printf("ERROR: Illuminated x=%d, z=%d\n", lx, ly);
     }
-
-    if (y >= (uint)light->z) {
-        memcpy(cell + mapsize, cell, sizeof(LightColor));
-    }*/
-
-    cells[0] = light->lightmap + ly + lx * mapsize;
-    /*cells[1] = cells[0] + mapsize;*/
-   
-    result[0] = light->color.r * intensity;
-    result[1] = light->color.g * intensity;
-    result[2] = light->color.b * intensity;
-    
-    /*memcpy(result + 3, result, 3 * sizeof(float));
-    memcpy(cells[0], result, 6 * sizeof(float));
-    memcpy(cells[1], result, 6 * sizeof(float));*/
-
-    memcpy(cells[0], result, 3 * sizeof(float));
+    *cell = 0xFFFFFFFF;
 }
-
+/*
 void
 lightsmoothlightmaps(World *world, Segment *seg)
 {
@@ -328,27 +302,52 @@ lightsmoothlightmaps(World *world, Segment *seg)
         }
     }
 }
-/*
-void
-lightcalclightmapraycast(Light *light, World *world)
-{
-    uint idx, wx, wz, i, mapsize;
-    LightColor *cell;
-    float dist;
-
-    mapsize = light->radius * 2 + 2;
-    mapsize *= mapsize;
-
-    memset(light->lightmap, 0, mapsize * sizeof(LightColor));
-
-    for (idx = 0; idx < mapsize; idx++) {
-        
-    }
-}*/
-
+*/
 void
 lightdelete(Light *light)
 {
-    free(light->lightmap);
-    free(light);
+    lightmap_destroy(&light->map);
 }
+
+LightMap
+lightmap_create(int width, int height)
+{
+    LightMap map;
+
+    map.width = width;
+    map.height = height;
+    map.pixels = calloc(width * height, sizeof(int));
+
+    return map;
+}
+
+void
+lightmap_destroy(LightMap *map)
+{
+    free(map->pixels);
+}
+
+/* Creates a new lightmap texture (VRAM) from an existing lightmap image */
+LightTex
+lighttex_create(int width, int height)
+{
+    LightTex tex;
+
+    glGenTextures(1, &tex.id);
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, width, height);
+    
+    return tex;
+}
+
+/* Unloads the texture from video memory */
+void
+lighttex_destroy(LightTex *tex)
+{
+    glDeleteTextures(1, &tex->id);
+}
+

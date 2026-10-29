@@ -443,7 +443,7 @@ shadercompile(const char *path, GLenum type)
 
     if (loglength > 0) {
         char *info = calloc(loglength + 1, sizeof(char));
-        glGetProgramInfoLog(shaderid, loglength, NULL, info);
+        glGetShaderInfoLog(shaderid, loglength, NULL, info);
         logprint(LOG_FATAL, "shader: Unable to compile shader: $s", info);
         free(info);
     }
@@ -636,13 +636,101 @@ texload(Texture *tex, const char *path)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D,
                     GL_TEXTURE_MIN_FILTER,
-                    GL_NEAREST_MIPMAP_LINEAR);
+                    GL_LINEAR_MIPMAP_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,
                     GL_TEXTURE_MAG_FILTER,
-                    GL_NEAREST);
+                    GL_NEAREST_MIPMAP_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 1);
     glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
+
+    tex->width = surface->w;
+    tex->height = surface->h;
+
+    SDL_FreeSurface(surface);
+}
+
+/* Scales down a texture atlas (texture must be 2^n size) */
+static char *
+texscaledownatlas_bilinear(const void *image, int size)
+{
+    const int result_size = size / 2;
+
+    Color *src_image = (Color *)image;
+    Color colors[4];
+    Color result_color;
+    Color *result = malloc(result_size * result_size * 4);
+
+    int row, col;
+
+    for (row = 0; row < size; row += 2) {
+        for (col = 0; col < size; col += 2) {
+            colors[0] = src_image[(row + 0) * size + (col + 0)];
+            colors[1] = src_image[(row + 0) * size + (col + 1)];
+            colors[2] = src_image[(row + 1) * size + (col + 0)];
+            colors[3] = src_image[(row + 1) * size + (col + 1)];
+
+            result_color.r = (colors[0].r + colors[1].r + colors[2].r + colors[3].r) / 4;
+            result_color.g = (colors[0].g + colors[1].g + colors[2].g + colors[3].g) / 4;
+            result_color.b = (colors[0].b + colors[1].b + colors[2].b + colors[3].b) / 4;
+            result_color.a = (colors[0].a + colors[1].a + colors[2].a + colors[3].a) / 4;
+
+            result[(row / 2) * result_size + (col / 2)] = result_color;
+        }
+    }
+
+    return (char *)result;
+}
+
+void
+texloadaniso(Texture *tex, const char *path)
+{
+    SDL_Surface *surface = IMG_Load(path);
+    int mode = GL_RGB;
+    void *images[6];
+
+    if (!surface) {
+        logprint(LOG_ERROR, "texture: Unable to load texture file $s: " \
+                            "SDL_image error: $s", path, IMG_GetError());
+        return;
+    }
+    glGenTextures(1, &tex->id);
+    glBindTexture(GL_TEXTURE_2D, tex->id);
+
+    if (surface->format->BytesPerPixel == 4) {
+        mode = GL_RGBA;
+    }
+
+    images[0] = surface->pixels;
+    images[1] = texscaledownatlas_bilinear(images[0], 1024);
+    images[2] = texscaledownatlas_bilinear(images[1], 512);
+    images[3] = texscaledownatlas_bilinear(images[2], 256);
+    images[4] = texscaledownatlas_bilinear(images[3], 128);
+    images[5] = texscaledownatlas_bilinear(images[4], 64);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, mode, 1024, 1024, 0, mode, GL_UNSIGNED_BYTE, images[0]);
+    glTexImage2D(GL_TEXTURE_2D, 1, mode, 512,  512,  0, mode, GL_UNSIGNED_BYTE, images[1]);
+    glTexImage2D(GL_TEXTURE_2D, 2, mode, 256,  256,  0, mode, GL_UNSIGNED_BYTE, images[2]);
+    glTexImage2D(GL_TEXTURE_2D, 3, mode, 128,  128,  0, mode, GL_UNSIGNED_BYTE, images[3]);
+    glTexImage2D(GL_TEXTURE_2D, 4, mode, 64,   64,   0, mode, GL_UNSIGNED_BYTE, images[4]);
+    glTexImage2D(GL_TEXTURE_2D, 5, mode, 32,   32,   0, mode, GL_UNSIGNED_BYTE, images[5]);
+
+    free(images[1]);
+    free(images[2]);
+    free(images[3]);
+    free(images[4]);
+    free(images[5]);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 3);
+
+    //glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, 8.0f);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
 
     tex->width = surface->w;
     tex->height = surface->h;
@@ -679,6 +767,33 @@ texfind(Texture *tex, const char *path)
     texname = calloc(len + 1, sizeof(char));
     memcpy(texname, name, len);
     texload(texentry, path);
+    htableadd(textures, texname, texentry);
+    *tex = *texentry;
+}
+
+void
+texfindaniso(Texture *tex, const char *path)
+{
+    int len;
+    char *name = strrchr(path, '/');
+    char *texname;
+    Texture *texentry;
+
+    if (!name) {
+        name = (char *)path;
+    }
+    name++;
+    texentry = htableget(textures, name);
+
+    if (texentry) {
+        *tex = *texentry;
+        return;
+    }
+    len = strlen(name);
+    texentry = malloc(sizeof(Texture));
+    texname = calloc(len + 1, sizeof(char));
+    memcpy(texname, name, len);
+    texloadaniso(texentry, path);
     htableadd(textures, texname, texentry);
     *tex = *texentry;
 }

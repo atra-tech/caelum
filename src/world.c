@@ -13,7 +13,6 @@
 #include "util/list.h"
 #include "util/htable.h"
 #include "agent.h"
-#include "light.h"
 #include "input.h"
 #include "core.h"
 #include "thread.h"
@@ -164,6 +163,7 @@ static Segment *segmentcreatematrix(uint rows, uint cols);
 static Layer *layercreatearray(uint count);
 static void segmentdeletematrix(Segment *segs, uint rows, uint cols);
 static void layerdeletearray(Layer *layers, uint count);
+/*
 static void lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
 static void lightwallsideinterpolate(World *world, uint x, uint y, uint z,
@@ -172,6 +172,7 @@ static void lightwalltopinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner);
 static void lightwallsubinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint side, uint corner);
+        */
 static void spacebackgroundinit(void);
 static void spacebackgroundrender(Camera *cam);
 static void spacebackgrounddelete(void);
@@ -182,6 +183,7 @@ static void selectiondelete(void);
 static List *tiledata;
 static Shader worldshader;
 static TPool *workerpool;
+static int prev_seg_x, prev_seg_z;
 
 /* Space background data */
 static struct SpaceBackground {
@@ -264,7 +266,7 @@ spacebackgroundinit(void)
     idx[2] = 0;
     vbufaddindex(&space_bg.vbo, idx);
 
-    space_bg.vbo.indxcount = 12;
+    space_bg.vbo.indxcount = 6;
 
     vbufbind(&space_bg.vbo);
 }
@@ -316,7 +318,6 @@ selectioninit(void)
             } else {
                 vert[2] -= 0.02f;
             }
-
             vbufaddvertex(&selection.vbo, vert, uv, norm);
         }
         idx[0] = indexcount + 0;
@@ -330,7 +331,7 @@ selectioninit(void)
         vbufaddindex(&selection.vbo, idx);
 
         indexcount += 4;
-        selection.vbo.indxcount += 12;
+        selection.vbo.indxcount += 6;
     }
     vbufbind(&selection.vbo);
 }
@@ -350,8 +351,6 @@ worldcreate()
 
     world->segs = segmentcreatematrix(SEGMENT_COUNT, SEGMENT_COUNT);
 
-    // TODO: Implement world loading and saving.
-    //  TEST DATA:
     uint seg_x, seg_y, tile_x, tile_y;
     Segment *seg;
     Layer *layer;
@@ -368,8 +367,7 @@ worldcreate()
 
             for (tile_x = 0; tile_x < SEGMENT_SIZE; tile_x++) {
                 for (tile_y = 0; tile_y < SEGMENT_SIZE; tile_y++) {
-                    layer->subtiles[tile_y + tile_x * SEGMENT_SIZE].data = 
-                        data;
+                    layer->subtiles[tile_y + tile_x * SEGMENT_SIZE].data = data;
                 }
             }
         }
@@ -391,8 +389,15 @@ segmentcreatematrix(uint rows, uint cols)
             segs[idx].dirty = 1;
             segs[idx].relight = 1;
             segs[idx].layers = layercreatearray(WORLD_HEIGHT);
+
+            segs[idx].light_tex.width = 0;
+            segs[idx].light_tex.height = 0;
+            segs[idx].light_tex.id = 0;
+            
             fastvboinit(&segs[idx].vbo);
-            veclistinit(&segs[idx].vertlights, 3);
+            veclistinit(&segs[idx].tangents, 3);
+            veclistinit(&segs[idx].bitangents, 3);
+
             segs[idx].lights = listcreate();
             glm_mat4_identity(segs[idx].modelmat);
             glm_translate_x(segs[idx].modelmat, i * SEGMENT_SIZE);
@@ -416,7 +421,6 @@ layercreatearray(uint count)
         layers[i].pos = i;
         layers[i].toptiles = calloc(LAYER_TILECOUNT, sizeof(Tile));
         layers[i].subtiles = calloc(LAYER_TILECOUNT, sizeof(Tile));
-        layers[i].lightmap = calloc(vertcount, sizeof(LightColor));
     }
 
     return layers;
@@ -439,7 +443,9 @@ segmentdeletematrix(Segment *segs, uint rows, uint cols)
     for (i = 0; i < segcount; i++) {
         layerdeletearray(segs[i].layers, WORLD_HEIGHT);
         fastvbodelete(&segs[i].vbo);
-        veclistdelete(&segs[i].vertlights);
+        veclistdelete(&segs[i].tangents);
+        veclistdelete(&segs[i].bitangents);
+        lighttex_destroy(&segs[i].light_tex);
         
         for (j = 0; j < segs[i].lights->size; j++) {
             lightdelete(listat(segs[i].lights, j));
@@ -457,9 +463,6 @@ layerdeletearray(Layer *layers, uint count)
     for (i = 0; i < count; i++) {
         free(layers[i].subtiles);
         free(layers[i].toptiles);
-        free(layers[i].lightmap);
-        //listdealloc(layers->links);
-        //listdelete(layers->links);
     }
     free(layers);
 }
@@ -538,7 +541,6 @@ worldhandle(World *world, Event *e)
         glm_translate_y(selection.modelmat, -0.17);
     }
 
-    //TODO: MAJOR REWORK FOR INVENTORY -> TILE PLACEMENT
     if (e->type == SDL_MOUSEMOTION) {
 
     } else if (e->type == SDL_MOUSEBUTTONDOWN) {
@@ -581,8 +583,8 @@ worldhandle(World *world, Event *e)
 
     }
 
-    for (i = -1; i <= 1; i++) {
-        for (j = -1; j <= 1; j++) {
+    for (i = -2; i <= 2; i++) {
+        for (j = -2; j <= 2; j++) {
             seg_x = tile_x + i * SEGMENT_SIZE;
             seg_z = tile_z + j * SEGMENT_SIZE;
 
@@ -592,7 +594,8 @@ worldhandle(World *world, Event *e)
             seg = worldgetsegmentat(world, seg_x, seg_z);
             if (relight) {
                 seg->relight = 1;
-            } else if (dirty) {
+            } 
+            if (dirty) {
                 seg->dirty = 1;
             }
         }
@@ -605,6 +608,116 @@ worldupdate(World *world, float dt)
     //  Update pressure and temperature values and air concentration
     //  Step pipe, wire values
     //  Call tile entities to update their states
+    static int init = 0;
+
+    Camera *cam;
+    Entity *player;
+    int seg_x, seg_z;
+    int i, j, k;
+    Segment *segs[VIEW_DIST_AREA];
+
+    cam = getmaincamera();    
+    player = cam->boundent;
+
+    seg_x = player->x / SEGMENT_SIZE;
+    seg_z = player->z / SEGMENT_SIZE;
+
+    const int half_dist = VIEW_DIST / 2;
+
+    if (!init) {
+        /* Initialise previous segments */
+        prev_seg_x = seg_x;
+        prev_seg_z = seg_z;
+        init = 1;
+
+        for (i = -half_dist; i <= half_dist; i++) {
+            for (j = -half_dist; j <= half_dist; j++) {
+                segs[0] = worldgetsegmentat(world, player->x + i * SEGMENT_SIZE, player->z + j * SEGMENT_SIZE);
+                segs[0]->light_tex = lighttex_create(2048, 2048);
+                segmentflagfullrelight(world, segs[0]);
+            }
+        }
+        return;
+    }
+
+    if (seg_x == prev_seg_x && seg_z == prev_seg_z) {
+        return;
+    }
+    k = 0;
+
+    /* Gather surrounding segments on position change */
+    for (i = -half_dist; i <= half_dist; i++) {
+        for (j = -half_dist; j <= half_dist; j++) {
+            segs[k] = worldgetsegmentat(world, prev_seg_x + i, prev_seg_z + j);
+            k++;
+        }
+    }
+
+    /* Shift and update lightmaps based on change in player segment */
+    if (seg_x == prev_seg_x + 1) {
+        /* Shift lightmaps in -X direction */
+        for (i = 0; i < VIEW_DIST; i++) {
+            const uint tex = segs[i * VIEW_DIST]->light_tex.id;
+
+            for (j = 0; j < VIEW_DIST - 1; j++) {
+                const uint index = i * VIEW_DIST + j;
+                segs[index]->light_tex.id = segs[index + 1]->light_tex.id;
+            }
+            segs[i * VIEW_DIST + VIEW_DIST - 1]->light_tex.id = tex;
+            segs[i * VIEW_DIST + VIEW_DIST - 1]->relight = 1;
+        }
+    } else if (seg_x == prev_seg_x - 1) {
+        /* Shift lightmaps in +X direction */
+        for (i = 0; i < VIEW_DIST; i++) {
+            const uint tex = segs[i * VIEW_DIST + VIEW_DIST - 1]->light_tex.id;
+
+            for (j = 1; j < VIEW_DIST; j++) {
+                const uint index = i * VIEW_DIST + j;
+                segs[index]->light_tex.id = segs[index - 1]->light_tex.id;
+            }
+            segs[i * VIEW_DIST]->light_tex.id = tex;
+            segs[i * VIEW_DIST]->relight = 1;
+        }
+    } else if (seg_x != prev_seg_x) {
+        /* Too far away! Recalculate all lights */
+        for (i = 0; i < VIEW_DIST_AREA; i++) {
+            segmentflagfullrelight(world, segs[i]);
+        }
+    }
+
+    if (seg_z == prev_seg_z + 1) {
+        /* Shift lightmaps in -Z direction */
+        for (i = 0; i < VIEW_DIST; i++) {
+            const uint tex = segs[i]->light_tex.id;
+
+            for (j = 0; j < VIEW_DIST - 1; j++) {
+                const uint index = j * VIEW_DIST + i;
+                segs[index]->light_tex.id = segs[index + VIEW_DIST]->light_tex.id;
+            }
+            segs[(VIEW_DIST - 1) * VIEW_DIST + i]->light_tex.id = tex;
+            segs[(VIEW_DIST - 1) * VIEW_DIST + i]->relight = 1;
+        }
+    } else if (seg_z == prev_seg_z - 1) {
+        /* Shift lightmaps in +Z direction */
+        for (i = 0; i < VIEW_DIST; i++) {
+            const uint tex = segs[(VIEW_DIST - 1) * VIEW_DIST + i]->light_tex.id;
+
+            for (j = 1; j < VIEW_DIST; j++) {
+                const uint index = j * VIEW_DIST + i;
+                segs[index]->light_tex.id = segs[index - VIEW_DIST]->light_tex.id;
+            }
+            segs[i]->light_tex.id = tex;
+            segs[i]->relight = 1;
+        }
+    } else {
+        /* Too far away! Relight all segments */
+        for (i = 0; i < VIEW_DIST_AREA; i++) {
+            segmentflagfullrelight(world, segs[i]);
+        }
+    }
+
+    prev_seg_x = seg_x;
+    prev_seg_z = seg_z;
 }
 
 void
@@ -617,8 +730,15 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
     vec3 vert, norm;
     vec2 uv;
     ivec3 index;
-    float colorvec[3];
     Tile *tile_adj[4] = {NULL, NULL, NULL, NULL};
+    
+    vec3 verts[4];
+    vec3 uvs[4];
+    vec3 bitangent, tangent;
+    vec3 edge1, edge2;
+    vec2 delta_uv1, delta_uv2;
+    float f;
+
 
     world_x = seg->x * SEGMENT_SIZE + x;
     world_z = seg->z * SEGMENT_SIZE + z;
@@ -633,7 +753,7 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
         tile_adj[3] = worldgettoptileat(world, world_x + 1, y, world_z);
     }
 
-    indexcount = vbo->indxcount / 3;
+    indexcount = (vbo->indxcount * 2) / 3;
 
     if (tile->data->attr & TILE_WALL) {
         for (i = 0; i < 9; i++) {
@@ -690,24 +810,46 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
                 if (i < 4) {
                     uv[0] = tile->data->sidetex[uvidx + 0];
                     uv[1] = tile->data->sidetex[uvidx + 1];
-                    lightwallsideinterpolate(world, world_x, y, world_z,
-                            colorvec, i, j);
                 } else if (i < 5) {
                     uv[0] = tile->data->toptex[uvidx + 0];
                     uv[1] = tile->data->toptex[uvidx + 1];
-                    lightwalltopinterpolate(world, world_x, y, world_z,
-                            colorvec, j);
                 } else {
                     uv[0] = tile->data->subsidetex[uvidx + 0];
                     uv[1] = tile->data->subsidetex[uvidx + 1];
-                    lightwallsubinterpolate(world, world_x, y, world_z,
-                            colorvec, i, j);
                 }
-                veclistpush(&seg->vertlights, colorvec);
                 memcpy(norm, worldnorms + normidx, 3 * sizeof(float));
-
+                memcpy(verts[j], vert, 3 * sizeof(float));
+                memcpy(uvs[j], uv, 2 * sizeof(float));
                 fastvboaddvertex(vbo, vert, uv, norm);
             }
+            /* Tangent and Bi-tangent calculation */
+            glm_vec3_sub(verts[1], verts[0], edge1);
+            glm_vec3_sub(verts[2], verts[0], edge2);
+
+            glm_vec2_sub(uvs[1], uvs[0], delta_uv1);
+            glm_vec2_sub(uvs[2], uvs[0], delta_uv2);
+
+            f = 1.0f / (delta_uv1[0] * delta_uv2[1] - delta_uv2[0] * delta_uv1[1]);
+       
+            tangent[0] = f * (delta_uv2[1] * edge1[0] - delta_uv1[1] * edge2[0]);
+            tangent[1] = f * (delta_uv2[1] * edge1[1] - delta_uv1[1] * edge2[1]);
+            tangent[2] = f * (delta_uv2[1] * edge1[2] - delta_uv1[1] * edge2[2]);
+
+            bitangent[0] = f * (-delta_uv2[0] * edge1[0] + delta_uv1[0] * edge2[0]);
+            bitangent[1] = f * (-delta_uv2[0] * edge1[1] + delta_uv1[0] * edge2[1]);
+            bitangent[2] = f * (-delta_uv2[0] * edge1[2] + delta_uv1[0] * edge2[2]);
+
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+
+            /* Index calculation */
             index[0] = indexcount + 0;
             index[1] = indexcount + 1;
             index[2] = indexcount + 2;
@@ -719,7 +861,7 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
             fastvboaddindex(vbo, index);
 
             indexcount += 4;
-            vbo->indxcount += 12;
+            vbo->indxcount += 6;
         }
     } else {
         for (i = 0; i < 5; i++) {
@@ -751,18 +893,43 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
                 vert[2] = topfloorverts[vertidx + 2] + z;
 
                 if (i < 4) {
-                    lightwallsideinterpolate(world, world_x, y, world_z,
-                            colorvec, i, j);
                     memcpy(uv, tile->data->sidetex + uvidx, 2 * sizeof(float));
                 } else {
-                    lightinterpolate(world, world_x, y, world_z, colorvec, j);
                     memcpy(uv, tile->data->toptex + uvidx, 2 * sizeof(float));
                 }
-                veclistpush(&seg->vertlights, colorvec);
                 memcpy(norm, worldnorms + normidx, 3 * sizeof(float));
-
+                memcpy(verts[j], vert, 3 * sizeof(float));
+                memcpy(uvs[j], uv, 2 * sizeof(float));
                 fastvboaddvertex(vbo, vert, uv, norm);
             }
+            /* Tangent and Bi-tangent calculation */
+            glm_vec3_sub(verts[1], verts[0], edge1);
+            glm_vec3_sub(verts[2], verts[0], edge2);
+
+            glm_vec2_sub(uvs[1], uvs[0], delta_uv1);
+            glm_vec2_sub(uvs[2], uvs[0], delta_uv2);
+
+            f = 1.0f / (delta_uv1[0] * delta_uv2[1] - delta_uv2[0] * delta_uv1[1]);
+       
+            tangent[0] = f * (delta_uv2[1] * edge1[0] - delta_uv1[1] * edge2[0]);
+            tangent[1] = f * (delta_uv2[1] * edge1[1] - delta_uv1[1] * edge2[1]);
+            tangent[2] = f * (delta_uv2[1] * edge1[2] - delta_uv1[1] * edge2[2]);
+
+            bitangent[0] = f * (-delta_uv2[0] * edge1[0] + delta_uv1[0] * edge2[0]);
+            bitangent[1] = f * (-delta_uv2[0] * edge1[1] + delta_uv1[0] * edge2[1]);
+            bitangent[2] = f * (-delta_uv2[0] * edge1[2] + delta_uv1[0] * edge2[2]);
+
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+            veclistpush(&seg->tangents, tangent);
+
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+            veclistpush(&seg->bitangents, bitangent);
+
+            /* Index calculation */
             index[0] = indexcount + 0;
             index[1] = indexcount + 1;
             index[2] = indexcount + 2;
@@ -774,7 +941,7 @@ toptilemesh(World *world, Segment *seg, uint x, uint y, uint z)
             fastvboaddindex(vbo, index);
 
             indexcount += 4;
-            vbo->indxcount += 12;
+            vbo->indxcount += 6;
         }
     }
 }
@@ -789,8 +956,15 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
     vec2 uv;
     vec3 norm;
     ivec3 index;
-    float colorvec[3];
     Tile *tile_adj[4] = {NULL, NULL, NULL, NULL};
+
+    vec3 verts[4];
+    vec3 uvs[4];
+    vec3 bitangent, tangent;
+    vec3 edge1, edge2;
+    vec2 delta_uv1, delta_uv2;
+    float f;
+
     
     world_x = seg->x * SEGMENT_SIZE + x;
     world_z = seg->z * SEGMENT_SIZE + z;
@@ -804,27 +978,27 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
     if (world_x < WORLD_SIZE - 1) {
         tile_adj[3] = worldgettoptileat(world, world_x + 1, y, world_z);
     }
-    indexcount = vbo->indxcount / 3;
+    indexcount = (vbo->indxcount * 2) / 3;
 
     for (i = 0; i < 5; i++) {
         normidx = i * 3;
 
         switch (i) {
-        case WALL_BACK:
-            if (tile_adj[0] && tile_adj[0]->data)
-                 continue;
-            break;
-        case WALL_FRONT:
-            if (tile_adj[1] && tile_adj[1]->data)
-                continue;
-            break;
-        case WALL_LEFT:
-            if (tile_adj[2] && tile_adj[2]->data)
-                continue;
-            break;
-        case WALL_RIGHT:
-            if (tile_adj[3] && tile_adj[3]->data)
-                continue;
+            case WALL_BACK:
+                if (tile_adj[0] && tile_adj[0]->data)
+                    continue;
+                break;
+            case WALL_FRONT:
+                if (tile_adj[1] && tile_adj[1]->data)
+                    continue;
+                break;
+            case WALL_LEFT:
+                if (tile_adj[2] && tile_adj[2]->data)
+                    continue;
+                break;
+            case WALL_RIGHT:
+                if (tile_adj[3] && tile_adj[3]->data)
+                    continue;
         }
 
         for (j = 0; j < 4; j++) {
@@ -835,18 +1009,43 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
             vert[2] = subfloorverts[vertidx + 2] + z;
 
             if (i < 4) {
-                lightwallsideinterpolate(world, world_x, y, world_z,
-                        colorvec, i, j);
                 memcpy(uv, tile->data->sidetex + uvidx, 2 * sizeof(float));
             } else {
-                lightinterpolate(world, world_x, y, world_z, colorvec, j);
                 memcpy(uv, tile->data->toptex + uvidx, 2 * sizeof(float));
             }
-            veclistpush(&seg->vertlights, colorvec);
             memcpy(norm, worldnorms + normidx, 3 * sizeof(float));
-
+            memcpy(verts[j], vert, 3 * sizeof(float));
+            memcpy(uvs[j], uv, 2 * sizeof(float));
             fastvboaddvertex(vbo, vert, uv, norm);
         }
+        /* Tangent and Bi-tangent calculation */
+        glm_vec3_sub(verts[1], verts[0], edge1);
+        glm_vec3_sub(verts[2], verts[0], edge2);
+
+        glm_vec2_sub(uvs[1], uvs[0], delta_uv1);
+        glm_vec2_sub(uvs[2], uvs[0], delta_uv2);
+
+        f = 1.0f / (delta_uv1[0] * delta_uv2[1] - delta_uv2[0] * delta_uv1[1]);
+
+        tangent[0] = f * (delta_uv2[1] * edge1[0] - delta_uv1[1] * edge2[0]);
+        tangent[1] = f * (delta_uv2[1] * edge1[1] - delta_uv1[1] * edge2[1]);
+        tangent[2] = f * (delta_uv2[1] * edge1[2] - delta_uv1[1] * edge2[2]);
+
+        bitangent[0] = f * (-delta_uv2[0] * edge1[0] + delta_uv1[0] * edge2[0]);
+        bitangent[1] = f * (-delta_uv2[0] * edge1[1] + delta_uv1[0] * edge2[1]);
+        bitangent[2] = f * (-delta_uv2[0] * edge1[2] + delta_uv1[0] * edge2[2]);
+
+        veclistpush(&seg->tangents, tangent);
+        veclistpush(&seg->tangents, tangent);
+        veclistpush(&seg->tangents, tangent);
+        veclistpush(&seg->tangents, tangent);
+
+        veclistpush(&seg->bitangents, bitangent);
+        veclistpush(&seg->bitangents, bitangent);
+        veclistpush(&seg->bitangents, bitangent);
+        veclistpush(&seg->bitangents, bitangent);
+
+        /* Index calculation */
         index[0] = indexcount + 0;
         index[1] = indexcount + 1;
         index[2] = indexcount + 2;
@@ -858,7 +1057,7 @@ subtilemesh(World *world, Segment *seg, uint x, uint y, uint z)
         fastvboaddindex(vbo, index);
 
         indexcount += 4;
-        vbo->indxcount += 12;
+        vbo->indxcount += 6;
     }
 }
 
@@ -897,8 +1096,7 @@ segmentlightmapjob(void *arg)
 {
     Segment *seg;
     World *world;
-    struct SegJobArgs *args;
-    args = arg;
+    struct SegJobArgs *args = arg;
 
     seg = args->seg;
     world = args->world;
@@ -909,35 +1107,14 @@ segmentlightmapjob(void *arg)
 }
 
 void
-segmentlightjob(void *arg)
-{
-    struct SegJobArgs *args;
-    args = arg;
-
-    Segment *seg = args->seg;
-    World *world = args->world;
-
-    segmentrelight(world, seg);
-    seg->relight = 0;
-    seg->dirty = 1;
-
-    free(args);
-}
-
-void
 segmentmeshjob(void *arg)
 {
-    struct SegJobArgs *args;
-    args = arg;
+    struct SegJobArgs *args = arg;
 
     Segment *seg = args->seg;
     World *world = args->world;
 
-    //lightsegmentcalcmap(world, seg);
     segmentmesh(world, seg);
-
-    /*printf("[Thread: %lu] Meshed segment: x=%d, z=%d\n",
-            SDL_ThreadID(), seg->x, seg->z);*/
 
     free(args);
 }
@@ -951,17 +1128,6 @@ void segmentqueueremesh(World *world, Segment *seg)
     args->world = world;
 
     tpooladdjob(workerpool, segmentmeshjob, args);
-}
-
-void segmentqueuerelight(World *world, Segment *seg)
-{
-    struct SegJobArgs *args; 
-
-    args = malloc(sizeof(struct SegJobArgs));
-    args->seg = seg;
-    args->world = world;
-
-    tpooladdjob(workerpool, segmentlightjob, args);
 }
 
 void segmentqueuelightmap(World *world, Segment *seg)
@@ -982,7 +1148,7 @@ worldrender(World *world, Camera *cam)
     Segment *seg;
     List *seglist;
     uint pseg_x, pseg_z, idx;
-    int i, j, seg_x, seg_z;
+    int i, j, k, seg_x, seg_z, light_count;
     clock_t time;
 
     seglist = listcreate();
@@ -995,8 +1161,8 @@ worldrender(World *world, Camera *cam)
     texbind(tilegetalbedotex());
     texsetactivetexture(1);
     texbind(tilegetemissiontex());
-    //texsetactivetexture(2);
-    //texbind(tilegetnormaltex());
+    texsetactivetexture(2);
+    texbind(tilegetnormaltex());
 
     shaderbind(&worldshader);
     shaderloadprojviewmat(&worldshader, cam->projviewmat);
@@ -1004,10 +1170,19 @@ worldrender(World *world, Camera *cam)
 
     shaderaddint(&worldshader, "albedo_map", 0);
     shaderaddint(&worldshader, "emission_map", 1);
-    //shaderaddint(&worldshader, "normal_map", 2);
+    shaderaddint(&worldshader, "normal_map", 2);
+    shaderaddint(&worldshader, "light_map", 3);
+
+    vec3 viewpos = {cam->ent.x, cam->ent.y, cam->ent.z};
+    shaderaddvec3(&worldshader, "viewpos", viewpos);
 
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+
+    const int MAX_LIGHTS = 1024;
+    vec3 lightpos[MAX_LIGHTS];
+    vec3 lightcolor[MAX_LIGHTS];
+    light_count = 0;
 
     for (i = -2; i <= 2; i++) {
         seg_x = pseg_x + i;
@@ -1024,18 +1199,33 @@ worldrender(World *world, Camera *cam)
                 continue;
             }
             listpushback(seglist, seg);
+
+            for (k = 0; k < (int)seg->lights->size; k++, light_count++) {
+                Light *light = listat(seg->lights, k);
+                lightpos[light_count][0] = light->pos[0];
+                lightpos[light_count][1] = light->pos[1] + 1.1f;
+                lightpos[light_count][2] = light->pos[2];
+                lightcolor[light_count][0] = light->color[0];
+                lightcolor[light_count][1] = light->color[1];
+                lightcolor[light_count][2] = light->color[2];
+            }
         }
     }
+    glUniform3fv(glGetUniformLocation(worldshader.prog, "light_pos"), light_count, (float *)lightpos);
+    glUniform3fv(glGetUniformLocation(worldshader.prog, "light_color"), light_count, (float *)lightcolor);
+    shaderaddint(&worldshader, "light_count", light_count);
 
     time = clock();
     for (idx = 0; idx < seglist->size; idx++) {
         seg = listat(seglist, idx);
-        if (seg->relight || seg->dirty) {
+        if (seg->dirty) {
             fastvboreset(&seg->vbo);
-            veclistclear(&seg->vertlights);
+            veclistclear(&seg->tangents);
+            veclistclear(&seg->bitangents);
         }
     }
 
+    /* Build Lightmaps */
     for (idx = 0; idx < seglist->size; idx++) {
         seg = listat(seglist, idx);
         
@@ -1045,14 +1235,29 @@ worldrender(World *world, Camera *cam)
     }
     tpoolwait(workerpool);
 
-    for (idx = 0; idx < seglist->size; idx++) {
+    /*for (idx = 0; idx < seglist->size; idx++) {
         seg = listat(seglist, idx);
 
         if (seg->relight) {
             segmentqueuerelight(world, seg);
         }
     }
-    tpoolwait(workerpool);
+    tpoolwait(workerpool);*/
+
+    /* Write lightmaps to segment texture lightmap */
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+
+        if (seg->relight) {
+            segmentrelight(world, seg);
+        }
+    }
+    /* Clear all flags, finishing light updates */
+    for (idx = 0; idx < seglist->size; idx++) {
+        seg = listat(seglist, idx);
+        segmentunflaglights(world, seg);
+    }
+
 
     for (idx = 0; idx < seglist->size; idx++) {
         seg = listat(seglist, idx);
@@ -1071,15 +1276,17 @@ worldrender(World *world, Camera *cam)
         
         if (seg->dirty) {
             fastvbobind(&seg->vbo);
-            fastvbobindvbo(&seg->vbo, &seg->vertlights);
+            fastvbobindvbo(&seg->vbo, &seg->tangents);
+            fastvbobindvbo(&seg->vbo, &seg->bitangents);
             seg->dirty = 0;
             meshed = 1;
         }
+        texsetactivetexture(3);
+        glBindTexture(GL_TEXTURE_2D, seg->light_tex.id);
 
         glBindVertexArray(seg->vbo.vao);
         shaderloadmodelmat(&worldshader, seg->modelmat);
-        glDrawElements(GL_TRIANGLES, seg->vbo.indxcount,
-                GL_UNSIGNED_INT, NULL);
+        glDrawElements(GL_TRIANGLES, seg->vbo.indxcount, GL_UNSIGNED_INT, NULL);
     }
     if (meshed) {
         logprint(LOG_INFO, "Rebuilt meshes in $fs", time / (float)CLOCKS_PER_SEC);
@@ -1110,8 +1317,7 @@ spacebackgroundrender(Camera *cam)
     shaderaddint(&space_bg.shader, "spacetex", 0);
     
     glBindVertexArray(space_bg.vbo.vao);
-    glDrawElements(GL_TRIANGLES, space_bg.vbo.indxcount,
-            GL_UNSIGNED_INT, NULL);
+    glDrawElements(GL_TRIANGLES, space_bg.vbo.indxcount, GL_UNSIGNED_INT, NULL);
     shaderunbind();
 }
 
@@ -1124,14 +1330,13 @@ selectionrender(Camera *cam)
     shaderloadmodelmat(&selection.shader, selection.modelmat);
 
     glBindVertexArray(selection.vbo.vao);
-    glDrawElements(GL_LINES, selection.vbo.indxcount,
-            GL_UNSIGNED_INT, NULL);
+    glDrawElements(GL_LINES, selection.vbo.indxcount, GL_UNSIGNED_INT, NULL);
     shaderunbind();
 }
 
 void
-worldaddlight(World *world, uint x, uint y, uint z,
-        float r, float g, float b, uint radius)
+worldaddlight(World *world, float x, float y, float z,
+        float r, float g, float b, int radius)
 {
     int i, j;
     Light *light;
@@ -1144,9 +1349,7 @@ worldaddlight(World *world, uint x, uint y, uint z,
 
     for (i = -1; i <= 1; i++) {
         for (j = -1; j <= 1; j++) {
-            seg = worldgetsegmentat(world,
-                    x + i * SEGMENT_SIZE,
-                    z + j * SEGMENT_SIZE);
+            seg = worldgetsegmentat(world, x + i * SEGMENT_SIZE, z + j * SEGMENT_SIZE);
             seg->relight = 1;
         }
     }
@@ -1165,9 +1368,9 @@ worldremovelight(World *world, uint x, uint y, uint z)
     for (i = 0; i < seg->lights->size; i++) {
         light = listat(seg->lights, i);
 
-        if ((uint)light->x == x &&
-                (uint)light->y == y &&
-                (uint)light->z == z) {
+        if ((uint)light->pos[0] == x &&
+                (uint)light->pos[1] == y &&
+                (uint)light->pos[2] == z) {
             listremove(seg->lights, i);
             lightdelete(light);
             seg->relight = 1;
@@ -1203,11 +1406,17 @@ segmentgetadjlights(World *world, Segment *seg)
             if (seg_x > SEGMENT_COUNT || seg_z > SEGMENT_COUNT) {
                 continue;
             }
-
             seg_adj = &world->segs[seg_z + seg_x * SEGMENT_COUNT];
 
             for (l = 0; l < seg_adj->lights->size; l++) {
                 light = listat(seg_adj->lights, l);
+
+                if (light->pos[0] <= seg->x * SEGMENT_SIZE - LIGHT_MAX_RADIUS ||
+                        light->pos[0] >= (seg->x + 1) * SEGMENT_SIZE + LIGHT_MAX_RADIUS - 1 ||
+                        light->pos[2] <= seg->z * SEGMENT_SIZE - LIGHT_MAX_RADIUS ||
+                        light->pos[2] >= (seg->z + 1) * SEGMENT_SIZE + LIGHT_MAX_RADIUS - 1) {
+                    continue;
+                }
                 listpushback(result, light);
             }
         }
@@ -1216,29 +1425,74 @@ segmentgetadjlights(World *world, Segment *seg)
     return result;
 }
 
+/* Calculates the lightmaps of every 'dirty' light in the segment */
 void
 segmentcalclights(World *world, Segment *seg)
 {
     uint i;
+    Light *light;
 
     for (i = 0; i < seg->lights->size; i++) {
-        lightcalclightmap(listat(seg->lights, i), world);
-        lightsmoothlightmaps(world, seg);
+        light = listat(seg->lights, i);
+        
+        if (light->dirty) {
+            lightcalclightmap(light, world);
+        }
     }
 }
 
+/* Applies all modified lights to the segment's lightmap texture */
 void
 segmentrelight(World *world, Segment *seg)
 {
+    uint i;
     List *lightlist;
+    Light *light;
 
     lightlist = segmentgetadjlights(world, seg);
 
-    lightclearsegment(seg);
-    lightapplytosegment(lightlist, seg);
+    for (i = 0; i < lightlist->size; i++) {
+        light = listat(lightlist, i);
+        
+        if (light->dirty) {
+            lightapplytosegment(listat(lightlist, i), seg);
+        }
+    }
+
     listdelete(lightlist);
 }
 
+/* Sets flags on segment and segment lights to recalculate all lightmaps */
+void
+segmentflagfullrelight(World *world, Segment *seg)
+{
+    uint i;
+    Light *light;
+
+    for (i = 0; i < seg->lights->size; i++) {
+        light = listat(seg->lights, i);
+        light->dirty = 1;
+    }
+    seg->relight = 1;
+}
+
+/* Unflags all segment lights for relighting */
+void
+segmentunflaglights(World *world, Segment *seg)
+{
+    uint i;
+    Light *light;
+
+    for (i = 0; i < seg->lights->size; i++) {
+        light = listat(seg->lights, i);
+        light->dirty = 0;
+    }
+    seg->relight = 0;
+}
+
+/* Relights*/
+
+/*
 void
 lightinterpolate(World *world, uint x, uint y, uint z,
         float *color, uint corner)
@@ -1346,9 +1600,6 @@ lightwallsideinterpolate(World *world, uint x, uint y, uint z,
         break;
     }
     memcpy(color, vertlight, sizeof(LightColor));
-/*    color[0] *= 0.9f;
-    color[1] *= 0.9f;
-    color[2] *= 0.9f;*/
 }
 
 void 
@@ -1466,7 +1717,7 @@ lightwallsubinterpolate(World *world, uint x, uint y, uint z,
     color[1] *= 0.8f;
     color[2] *= 0.8f;
 }
-
+*/
 Segment *
 worldgetsegmentat(World *world, uint x, uint z)
 {
@@ -1484,7 +1735,7 @@ worldgetlayerat(World *world, uint x, uint y, uint z)
 
     return &world->segs[z + x * SEGMENT_COUNT].layers[y];
 }
-
+/*
 LightColor *
 worldgetlightcellat(World *world, uint x, uint y, uint z)
 {
@@ -1495,7 +1746,7 @@ worldgetlightcellat(World *world, uint x, uint y, uint z)
 
     return layer->lightmap + z + x * (SEGMENT_SIZE + 1);
 }
-
+*/
 Tile *
 worldgettoptileat(World *world, uint x, uint y, uint z)
 {

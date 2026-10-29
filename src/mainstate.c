@@ -97,22 +97,37 @@ createtestworld(void)
     worldgettoptileat(world, 518, 0, 516)->data = wall;
     worldgettoptileat(world, 519, 0, 516)->data = wall;
     worldgettoptileat(world, 520, 0, 516)->data = wall;
-    worldgettoptileat(world, 524, 0, 527)->data =
-        tilegetdata("int_floor_tiled");
+    worldgettoptileat(world, 524, 0, 527)->data = tilegetdata("int_floor_tiled");
 
-    worldaddlight(world, 515, 0, 516, 0.1, 0.5, 1.0, 10);
-    worldaddlight(world, 524, 0, 526, 1.0, 0.5, 0.1, 14);
+    worldaddlight(world, 515.5, 0, 516.5, 0.4, 0.8, 1.0, 8);
+    worldaddlight(world, 524.5, 0, 526.5, 1.0, 0.8, 0.4, 8);
     
-    worldaddlight(world, 504, 0, 536, 1.0, 0.8, 0.1, 15);
-    worldaddlight(world, 504, 0, 504, 0.4, 1.0, 0.1, 15);
-    worldaddlight(world, 536, 0, 504, 0.1, 0.8, 1.0, 15);
-    worldaddlight(world, 536, 0, 536, 1.0, 0.1, 0.8, 15);
+    worldaddlight(world, 504.5, 0, 536.5, 1.0, 0.8, 0.1, 8);
+    worldaddlight(world, 504.5, 0, 504.5, 0.4, 1.0, 0.1, 8);
+    worldaddlight(world, 536.5, 0, 504.5, 0.1, 0.8, 1.0, 8);
+    worldaddlight(world, 536.5, 0, 536.5, 1.0, 0.1, 0.8, 8);
+}
+
+void GLAPIENTRY
+MessageCallback( GLenum source,
+                 GLenum type,
+                 GLuint id,
+                 GLenum severity,
+                 GLsizei length,
+                 const GLchar* message,
+                 const void* userParam )
+{
+  fprintf( stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+           ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
+            type, severity, message );
 }
 
 void
 mainstatestart(void)
 {
     atrapushstate(caelumstate);
+    //glEnable(GL_DEBUG_OUTPUT);
+    //glDebugMessageCallback(MessageCallback, 0);
 }
 
 void
@@ -154,6 +169,7 @@ caelumupdate(float dt)
     // Update player position based on velocity.
     playerupdate(world, dt * 0.001);
     cameraupdate(camera);
+    worldupdate(world, dt);
 }
 
 void

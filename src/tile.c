@@ -17,7 +17,7 @@
 
 #define TILEDATA_FILE_EXT ".abf"
 #define TILE_IMAGE_SIZE   1024
-#define TILE_TEXTURE_SIZE 32
+#define TILE_TEXTURE_SIZE 128
 
 static List * tileloadmanifest(const char *path);
 static TileData * tileloadtiledata(const char *path);
@@ -37,15 +37,17 @@ tiledatabaseinit(const char *manifest)
     char *pathcpy = malloc((strlen(manifest) + 1) * sizeof(char));
     char *chr, *file, *entry;
 
-    texfind(&tiletex_albedo, "res/texture/tiles.png");
-    texfind(&tiletex_emission, "res/texture/tiles_emission.png");
-    //texfind(&tiletex_normal, "res/texture/tiles_normal.png");
+    texfindaniso(&tiletex_albedo, "res/texture/tiles.png");
+    texfindaniso(&tiletex_emission, "res/texture/tiles_emission.png");
+    texfindaniso(&tiletex_normal, "res/texture/tiles_normal.png");
+
     tiletex_albedo.imagesize = TILE_IMAGE_SIZE;
     tiletex_emission.imagesize = TILE_IMAGE_SIZE;
-    //tiletex_normal.imagesize = TILE_IMAGE_SIZE;
+    tiletex_normal.imagesize = TILE_IMAGE_SIZE;
+
     tiletex_albedo.texsize = TILE_TEXTURE_SIZE;
     tiletex_emission.texsize = TILE_TEXTURE_SIZE;
-    //tiletex_normal.texsize = TILE_TEXTURE_SIZE;
+    tiletex_normal.texsize = TILE_TEXTURE_SIZE;
 
     tiledata = htablecreate(htablestringhash, htablestringequal);
     entries = tileloadmanifest(manifest);
